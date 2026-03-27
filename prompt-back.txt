@@ -1,0 +1,199 @@
+# PROMPT – Backend Sistema de Gestión de Iglesia
+
+Actúa como un desarrollador backend senior experto en Node.js, Express y Prisma ORM.
+
+## 🎯 Objetivo
+
+Construir un backend completo para un sistema de gestión de iglesia, partiendo desde un archivo SQL existente.
+
+El sistema debe:
+
+* Leer un archivo SQL local
+* Convertirlo a un schema Prisma
+* Generar migraciones
+* Crear las tablas en PostgreSQL
+* Implementar la base del backend con Express
+* Preparar el proyecto para desarrollo de APIs
+
+---
+
+## 🧱 Stack obligatorio
+
+* Node.js
+* Express
+* Prisma ORM
+* PostgreSQL
+* Arquitectura modular
+
+---
+
+## 📥 Input
+
+Existe un archivo llamado:
+
+database.sql
+
+IMPORTANTE:
+
+* El archivo se encuentra en la raíz del proyecto
+* Debes leer directamente este archivo desde el filesystem
+* NO debes pedir el contenido manualmente
+* Usa fs.readFileSync para leer database.sql desde la raíz
+
+---
+
+## 📌 Tareas
+
+### 1. Inicialización del proyecto
+
+* Crear proyecto Node.js
+* Instalar dependencias:
+
+  * express
+  * prisma
+  * @prisma/client
+  * cors
+  * dotenv
+  * jsonwebtoken
+  * bcrypt
+
+---
+
+### 2. Configuración base
+
+Crear estructura:
+
+src/
+├── modules/
+├── config/
+├── middlewares/
+├── app.js
+├── server.js
+
+Configurar:
+
+* Express
+* CORS
+* dotenv
+
+---
+
+### 3. Prisma
+
+* Inicializar Prisma
+* Leer el archivo database.sql
+* Analizar su contenido
+* Convertirlo a schema.prisma
+
+Respetar:
+
+* nombres de tablas
+* relaciones
+* claves primarias y foráneas
+* tipos de datos
+
+Ajustar si es necesario para compatibilidad con Prisma
+
+---
+
+### 4. Migraciones
+
+NO usar prisma db push
+
+Usar:
+
+npx prisma migrate dev --name init
+
+Asegurar que:
+
+* Las tablas se crean correctamente
+* No hay conflictos con el SQL original
+
+---
+
+### 5. Configuración DB
+
+Usar variable de entorno:
+
+DATABASE_URL=
+
+Compatible con PostgreSQL (Supabase)
+
+---
+
+### 6. Prisma Client
+
+Ejecutar:
+
+npx prisma generate
+
+---
+
+### 7. Backend base
+
+Crear servidor Express funcional
+
+Endpoint:
+
+GET /api/health
+
+Response:
+{ "status": "ok" }
+
+---
+
+### 8. Arquitectura modular
+
+Cada módulo debe tener:
+
+* controller
+* service
+* repository
+* routes
+
+---
+
+### 9. Módulo Members
+
+CRUD completo:
+
+GET /api/members
+GET /api/members/:id
+POST /api/members
+PUT /api/members/:id
+DELETE /api/members/:id
+
+---
+
+## ⚠️ Restricciones
+
+* Código limpio y modular
+* No sobreingeniería
+* No agregar librerías innecesarias
+* Mantener consistencia con el SQL
+
+---
+
+## 🚀 Output esperado
+
+* package.json
+* estructura del proyecto
+* schema.prisma
+* migración inicial
+* servidor funcionando
+* CRUD members
+* instrucciones de ejecución
+
+---
+
+## 🧠 Forma de trabajo
+
+* Pensar antes de codificar
+* Explicar decisiones breves
+* Generar código listo para ejecutar
+
+---
+
+## ▶️ Inicio
+
+Comienza leyendo database.sql desde la raíz del proyecto y genera el schema Prisma.

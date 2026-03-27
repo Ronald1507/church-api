@@ -1,0 +1,625 @@
+// Prisma schema for church-api - Full database schema with relations
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =============================================================
+// 1. SISTEMA DE ESTADOS CENTRALIZADO
+// =============================================================
+model Estado {
+  id_estado       Int      @id @default(autoincrement())
+  entidad         String   @map("entidad") @db.VarChar(60)
+  codigo          String   @map("codigo") @db.VarChar(30)
+  nombre          String   @map("nombre") @db.VarChar(80)
+  descripcion     String?  @map("descripcion") @db.Text
+  color_hex       String?  @map("color_hex") @db.Char(7)
+  es_estado_final Boolean  @default(false) @map("es_estado_final")
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  // Inverse relations
+  usuarios            UsuarioSistema[]
+  congregaciones      Congregacion[]
+  ministerios         Ministerio[]
+  miembros            Miembro[]
+  cargoMinisterials   CargoMinisterial[]
+  visitaPastorals     VisitaPastoral[]
+  peticionOraciones   PeticionOracion[]
+  institucions        Institucion[]
+  miembroInstitucions MiembroInstitucion[]
+  eventos             Evento[]
+  finanzasCuentas     FinanzaCuenta[]
+  transaccions        Transaccion[]
+  inventarioItems     InventarioItem[]
+  prestamoInventarios PrestamoInventario[]
+  comunicacion        Comunicacion[]
+  documentos          Documento[]
+
+  @@unique([entidad, codigo])
+  @@map("estado")
+}
+
+// =============================================================
+// 2. MÓDULO SISTEMA: ROLES Y USUARIOS
+// =============================================================
+model RolSistema {
+  id_rol      Int              @id @default(autoincrement())
+  nombre      String           @unique @map("nombre") @db.VarChar(60)
+  descripcion String?          @map("descripcion") @db.Text
+  permisos    Json             @default("{}") @map("permisos")
+  created_at  DateTime         @default(now()) @map("created_at") @db.Timestamptz
+  updated_at  DateTime         @default(now()) @map("updated_at") @db.Timestamptz
+  usuarios    UsuarioSistema[]
+
+  @@map("rol_sistema")
+}
+
+model UsuarioSistema {
+  id_usuario    Int       @id @default(autoincrement())
+  username      String    @unique @map("username") @db.VarChar(60)
+  password_hash String    @map("password_hash") @db.VarChar(255)
+  email         String    @unique @map("email") @db.VarChar(120)
+  id_rol        Int       @map("id_rol")
+  id_estado     Int       @map("id_estado")
+  ultimo_acceso DateTime? @map("ultimo_acceso") @db.Timestamptz
+  id_miembro    Int?      @map("id_miembro")
+  created_at    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  rol    RolSistema @relation(fields: [id_rol], references: [id_rol])
+  estado Estado     @relation(fields: [id_estado], references: [id_estado])
+
+  @@index([id_rol])
+  @@index([id_estado])
+  @@map("usuario_sistema")
+}
+
+// =============================================================
+// 3. MÓDULO MEMBRESÍA
+// =============================================================
+model TipoMiembro {
+  id_tipo     Int       @id @default(autoincrement())
+  nombre      String    @unique @map("nombre") @db.VarChar(60)
+  descripcion String?   @map("descripcion") @db.Text
+  created_at  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at  DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  miembros    Miembro[]
+
+  @@map("tipo_miembro")
+}
+
+model Congregacion {
+  id_congregacion Int      @id @default(autoincrement())
+  nombre          String   @map("nombre") @db.VarChar(120)
+  direccion       String?  @map("direccion") @db.VarChar(200)
+  ciudad          String?  @map("ciudad") @db.VarChar(80)
+  region          String?  @map("region") @db.VarChar(80)
+  id_pastor       Int?     @map("id_pastor")
+  telefono        String?  @map("telefono") @db.VarChar(20)
+  email           String?  @map("email") @db.VarChar(120)
+  id_estado       Int      @map("id_estado")
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  estado Estado @relation(fields: [id_estado], references: [id_estado])
+
+  // Inverse relations
+  ministerios     Ministerio[]
+  miembros        Miembro[]
+  institucions    Institucion[]
+  eventos         Evento[]
+  finanzasCuentas FinanzaCuenta[]
+  inventarioItems InventarioItem[]
+  presupuestos    Presupuesto[]
+  comunicaciones  Comunicacion[]
+
+  @@map("congregacion")
+}
+
+model Ministerio {
+  id_ministerio   Int      @id @default(autoincrement())
+  nombre          String   @map("nombre") @db.VarChar(120)
+  descripcion     String?  @map("descripcion") @db.Text
+  id_lider        Int?     @map("id_lider")
+  id_congregacion Int      @map("id_congregacion")
+  id_estado       Int      @map("id_estado")
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  congregacion   Congregacion         @relation(fields: [id_congregacion], references: [id_congregacion])
+  estado         Estado               @relation(fields: [id_estado], references: [id_estado])
+  miembros       Miembro[]
+  cargos         CargoMinisterial[]
+  comunicaciones Comunicacion[]
+  prestamos      PrestamoInventario[]
+
+  @@index([id_congregacion])
+  @@index([id_estado])
+  @@map("ministerio")
+}
+
+model Miembro {
+  id_miembro       Int       @id @default(autoincrement())
+  nombres          String    @map("nombres") @db.VarChar(100)
+  apellidos        String    @map("apellidos") @db.VarChar(100)
+  fecha_nacimiento DateTime? @map("fecha_nacimiento") @db.Date
+  genero           String?   @map("genero") @db.Char(1)
+  estado_civil     String?   @map("estado_civil") @db.VarChar(20)
+  rut              String?   @unique @map("rut") @db.VarChar(12)
+  telefono         String?   @map("telefono") @db.VarChar(20)
+  email            String?   @map("email") @db.VarChar(120)
+  direccion        String?   @map("direccion") @db.VarChar(200)
+  foto_url         String?   @map("foto_url") @db.VarChar(300)
+  fecha_ingreso    DateTime  @default(now()) @map("fecha_ingreso") @db.Date
+  id_estado        Int       @map("id_estado")
+  id_congregacion  Int       @map("id_congregacion")
+  id_ministerio    Int?      @map("id_ministerio")
+  id_tipo_miembro  Int       @map("id_tipo_miembro")
+  created_at       DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at       DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  // Relations
+  estado       Estado       @relation(fields: [id_estado], references: [id_estado])
+  congregacion Congregacion @relation(fields: [id_congregacion], references: [id_congregacion])
+  tipoMiembro  TipoMiembro  @relation(fields: [id_tipo_miembro], references: [id_tipo])
+  ministerio   Ministerio?  @relation(fields: [id_ministerio], references: [id_ministerio])
+
+  // Inverse relations
+  cargoMinisterials    CargoMinisterial[]
+  relacionesOrigen     RelacionFamiliar[]    @relation("RelacionOrigen")
+  relacionesDestino    RelacionFamiliar[]    @relation("RelacionDestino")
+  historialEspirituals HistorialEspiritual[]
+  visitaPastorals      VisitaPastoral[]      @relation("MiembroVisitado")
+  pastorVisitas        VisitaPastoral[]      @relation("PastorVisitas")
+  peticionOraciones    PeticionOracion[]
+  miembroInstitucions  MiembroInstitucion[]
+  asistenciaEventos    AsistenciaEvento[]
+  ofrendaDizmos        OfrendaDizmo[]
+  documentos           Documento[]
+
+  @@index([id_congregacion])
+  @@index([id_ministerio])
+  @@index([id_estado])
+  @@map("miembro")
+}
+
+model CargoMinisterial {
+  id_cargo      Int       @id @default(autoincrement())
+  id_miembro    Int       @map("id_miembro")
+  id_ministerio Int       @map("id_ministerio")
+  cargo         String    @map("cargo") @db.VarChar(80)
+  fecha_inicio  DateTime  @map("fecha_inicio") @db.Date
+  fecha_fin     DateTime? @map("fecha_fin") @db.Date
+  id_estado     Int       @map("id_estado")
+  created_at    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  miembro    Miembro    @relation(fields: [id_miembro], references: [id_miembro])
+  ministerio Ministerio @relation(fields: [id_ministerio], references: [id_ministerio])
+  estado     Estado     @relation(fields: [id_estado], references: [id_estado])
+
+  @@index([id_miembro])
+  @@index([id_ministerio])
+  @@map("cargo_ministerial")
+}
+
+// =============================================================
+// 4. MÓDULO FAMILIA
+// =============================================================
+model TipoRelacionFamiliar {
+  id_tipo        Int                @id @default(autoincrement())
+  nombre         String             @unique @map("nombre") @db.VarChar(60)
+  nombre_inverso String             @map("nombre_inverso") @db.VarChar(60)
+  es_simetrica   Boolean            @default(false) @map("es_simetrica")
+  created_at     DateTime           @default(now()) @map("created_at") @db.Timestamptz
+  relaciones     RelacionFamiliar[]
+
+  @@map("tipo_relacion_familiar")
+}
+
+model RelacionFamiliar {
+  id                 Int      @id @default(autoincrement())
+  id_miembro_origen  Int      @map("id_miembro_origen")
+  id_miembro_destino Int      @map("id_miembro_destino")
+  id_tipo_relacion   Int      @map("id_tipo_relacion")
+  fecha_registro     DateTime @default(now()) @map("fecha_registro") @db.Date
+  created_at         DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  miembroOrigen  Miembro              @relation("RelacionOrigen", fields: [id_miembro_origen], references: [id_miembro])
+  miembroDestino Miembro              @relation("RelacionDestino", fields: [id_miembro_destino], references: [id_miembro])
+  tipoRelacion   TipoRelacionFamiliar @relation(fields: [id_tipo_relacion], references: [id_tipo])
+
+  @@unique([id_miembro_origen, id_miembro_destino, id_tipo_relacion])
+  @@index([id_miembro_origen])
+  @@index([id_miembro_destino])
+  @@map("relacion_familiar")
+}
+
+// =============================================================
+// 5. MÓDULO ESPIRITUAL
+// =============================================================
+model TipoHito {
+  id_tipo_hito         Int                   @id @default(autoincrement())
+  nombre               String                @unique @map("nombre") @db.VarChar(80)
+  descripcion          String?               @map("descripcion") @db.Text
+  requiere_ministro    Boolean               @default(true) @map("requiere_ministro")
+  genera_documento     Boolean               @default(false) @map("genera_documento")
+  created_at           DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updated_at           DateTime              @default(now()) @map("updated_at") @db.Timestamptz
+  historialEspirituals HistorialEspiritual[]
+
+  @@map("tipo_hito")
+}
+
+model HistorialEspiritual {
+  id_hito       Int      @id @default(autoincrement())
+  id_miembro    Int      @map("id_miembro")
+  id_tipo_hito  Int      @map("id_tipo_hito")
+  fecha_hito    DateTime @map("fecha_hito") @db.Date
+  lugar         String?  @map("lugar") @db.VarChar(150)
+  id_ministro   Int?     @map("id_ministro")
+  observaciones String?  @map("observaciones") @db.Text
+  documento_url String?  @map("documento_url") @db.VarChar(300)
+  created_at    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at    DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  miembro  Miembro  @relation(fields: [id_miembro], references: [id_miembro])
+  tipoHito TipoHito @relation(fields: [id_tipo_hito], references: [id_tipo_hito])
+
+  @@index([id_miembro])
+  @@index([id_tipo_hito])
+  @@map("historial_espiritual")
+}
+
+// =============================================================
+// 6. MÓDULO PASTORAL
+// =============================================================
+model VisitaPastoral {
+  id_visita     Int      @id @default(autoincrement())
+  id_miembro    Int      @map("id_miembro")
+  id_pastor     Int      @map("id_pastor")
+  fecha_visita  DateTime @map("fecha_visita") @db.Date
+  motivo        String   @map("motivo") @db.VarChar(200)
+  observaciones String?  @map("observaciones") @db.Text
+  resultado     String?  @map("resultado") @db.Text
+  id_estado     Int      @map("id_estado")
+  created_at    DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at    DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  miembro Miembro @relation("MiembroVisitado", fields: [id_miembro], references: [id_miembro])
+  pastor  Miembro @relation("PastorVisitas", fields: [id_pastor], references: [id_miembro])
+  estado  Estado  @relation(fields: [id_estado], references: [id_estado])
+
+  @@index([id_miembro])
+  @@index([id_pastor])
+  @@index([fecha_visita])
+  @@map("visita_pastoral")
+}
+
+model PeticionOracion {
+  id_peticion     Int       @id @default(autoincrement())
+  id_miembro      Int       @map("id_miembro")
+  descripcion     String    @map("descripcion") @db.Text
+  categoria       String?   @map("categoria") @db.VarChar(60)
+  privacidad      String    @default("privada") @map("privacidad") @db.VarChar(20)
+  id_estado       Int       @map("id_estado")
+  fecha_solicitud DateTime  @default(now()) @map("fecha_solicitud") @db.Date
+  fecha_cierre    DateTime? @map("fecha_cierre") @db.Date
+  testimonio      String?   @map("testimonio") @db.Text
+  created_at      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  miembro Miembro @relation(fields: [id_miembro], references: [id_miembro])
+  estado  Estado  @relation(fields: [id_estado], references: [id_estado])
+
+  @@index([id_miembro])
+  @@index([id_estado])
+  @@map("peticion_oracion")
+}
+
+// =============================================================
+// 7. MÓDULO INSTITUCIONES
+// =============================================================
+model Institucion {
+  id_institucion  Int      @id @default(autoincrement())
+  nombre          String   @map("nombre") @db.VarChar(120)
+  tipo            String?  @map("tipo") @db.VarChar(60)
+  descripcion     String?  @map("descripcion") @db.Text
+  id_congregacion Int      @map("id_congregacion")
+  id_estado       Int      @map("id_estado")
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  congregacion Congregacion @relation(fields: [id_congregacion], references: [id_congregacion])
+  estado       Estado       @relation(fields: [id_estado], references: [id_estado])
+
+  // Inverse relation
+  miembroInstitucions MiembroInstitucion[]
+
+  @@index([id_congregacion])
+  @@map("institucion")
+}
+
+model MiembroInstitucion {
+  id             Int      @id @default(autoincrement())
+  id_miembro     Int      @map("id_miembro")
+  id_institucion Int      @map("id_institucion")
+  rol            String?  @map("rol") @db.VarChar(80)
+  fecha_ingreso  DateTime @default(now()) @map("fecha_ingreso") @db.Date
+  id_estado      Int      @map("id_estado")
+  created_at     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at     DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  miembro     Miembro     @relation(fields: [id_miembro], references: [id_miembro])
+  institucion Institucion @relation(fields: [id_institucion], references: [id_institucion])
+  estado      Estado      @relation(fields: [id_estado], references: [id_estado])
+
+  @@unique([id_miembro, id_institucion])
+  @@index([id_miembro])
+  @@index([id_institucion])
+  @@map("miembro_institucion")
+}
+
+// =============================================================
+// 8. MÓDULO EVENTOS
+// =============================================================
+model Evento {
+  id_evento       Int       @id @default(autoincrement())
+  nombre          String    @map("nombre") @db.VarChar(150)
+  tipo            String?   @map("tipo") @db.VarChar(60)
+  descripcion     String?   @map("descripcion") @db.Text
+  fecha_inicio    DateTime  @map("fecha_inicio") @db.Timestamptz
+  fecha_fin       DateTime? @map("fecha_fin") @db.Timestamptz
+  lugar           String?   @map("lugar") @db.VarChar(200)
+  id_congregacion Int       @map("id_congregacion")
+  capacidad_max   Int?      @map("capacidad_max")
+  id_estado       Int       @map("id_estado")
+  created_at      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  congregacion Congregacion       @relation(fields: [id_congregacion], references: [id_congregacion])
+  estado       Estado             @relation(fields: [id_estado], references: [id_estado])
+  asistencia   AsistenciaEvento[]
+
+  @@index([id_congregacion])
+  @@index([fecha_inicio])
+  @@index([id_estado])
+  @@map("evento")
+}
+
+model AsistenciaEvento {
+  id            Int      @id @default(autoincrement())
+  id_evento     Int      @map("id_evento")
+  id_miembro    Int      @map("id_miembro")
+  hora_registro DateTime @default(now()) @map("hora_registro") @db.Timestamptz
+  tipo_registro String   @default("presencial") @map("tipo_registro") @db.VarChar(20)
+  created_at    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  evento  Evento  @relation(fields: [id_evento], references: [id_evento])
+  miembro Miembro @relation(fields: [id_miembro], references: [id_miembro])
+
+  @@unique([id_evento, id_miembro])
+  @@index([id_evento])
+  @@index([id_miembro])
+  @@map("asistencia_evento")
+}
+
+// =============================================================
+// 9. MÓDULO ECONOMÍA
+// =============================================================
+model FinanzaCuenta {
+  id_cuenta       Int      @id @default(autoincrement())
+  nombre          String   @map("nombre") @db.VarChar(120)
+  tipo            String   @map("tipo") @db.VarChar(40)
+  descripcion     String?  @map("descripcion") @db.Text
+  saldo_actual    Decimal  @default(0) @map("saldo_actual")
+  id_congregacion Int      @map("id_congregacion")
+  id_estado       Int      @map("id_estado")
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  congregacion  Congregacion  @relation(fields: [id_congregacion], references: [id_congregacion])
+  estado        Estado        @relation(fields: [id_estado], references: [id_estado])
+  transacciones Transaccion[]
+
+  @@index([id_congregacion])
+  @@map("finanza_cuenta")
+}
+
+model Transaccion {
+  id_transaccion    Int      @id @default(autoincrement())
+  id_cuenta         Int      @map("id_cuenta")
+  tipo              String   @map("tipo") @db.VarChar(10)
+  concepto          String   @map("concepto") @db.VarChar(200)
+  monto             Decimal  @map("monto")
+  fecha             DateTime @default(now()) @map("fecha") @db.Date
+  metodo_pago       String?  @map("metodo_pago") @db.VarChar(30)
+  id_registrado_por Int      @map("id_registrado_por")
+  comprobante_url   String?  @map("comprobante_url") @db.VarChar(300)
+  id_estado         Int      @map("id_estado")
+  created_at        DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at        DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  cuenta   FinanzaCuenta  @relation(fields: [id_cuenta], references: [id_cuenta])
+  estado   Estado         @relation(fields: [id_estado], references: [id_estado])
+  ofrendas OfrendaDizmo[]
+
+  @@index([id_cuenta])
+  @@index([fecha])
+  @@index([id_estado])
+  @@map("transaccion")
+}
+
+model OfrendaDizmo {
+  id_ofrenda     Int      @id @default(autoincrement())
+  id_miembro     Int      @map("id_miembro")
+  id_transaccion Int      @map("id_transaccion")
+  tipo           String   @map("tipo") @db.VarChar(20)
+  fecha          DateTime @default(now()) @map("fecha") @db.Date
+  monto          Decimal  @map("monto")
+  sobre_numero   String?  @map("sobre_numero") @db.VarChar(20)
+  created_at     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  miembro     Miembro     @relation(fields: [id_miembro], references: [id_miembro])
+  transaccion Transaccion @relation(fields: [id_transaccion], references: [id_transaccion])
+
+  @@index([id_miembro])
+  @@index([id_transaccion])
+  @@map("ofrenda_dizmo")
+}
+
+model Presupuesto {
+  id_presupuesto  Int      @id @default(autoincrement())
+  id_congregacion Int      @map("id_congregacion")
+  anio            Int      @map("anio") @db.SmallInt
+  mes             Int      @map("mes") @db.SmallInt
+  categoria       String   @map("categoria") @db.VarChar(80)
+  monto_asignado  Decimal  @default(0) @map("monto_asignado")
+  monto_ejecutado Decimal  @default(0) @map("monto_ejecutado")
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  congregacion Congregacion @relation(fields: [id_congregacion], references: [id_congregacion])
+
+  @@unique([id_congregacion, anio, mes, categoria])
+  @@index([id_congregacion, anio, mes])
+  @@map("presupuesto")
+}
+
+// =============================================================
+// 10. MÓDULO INVENTARIO
+// =============================================================
+model InventarioItem {
+  id_item         Int      @id @default(autoincrement())
+  nombre          String   @map("nombre") @db.VarChar(150)
+  categoria       String?  @map("categoria") @db.VarChar(80)
+  descripcion     String?  @map("descripcion") @db.Text
+  codigo          String?  @unique @map("codigo") @db.VarChar(40)
+  cantidad        Int      @default(1) @map("cantidad")
+  unidad_medida   String   @default("unidad") @map("unidad_medida") @db.VarChar(20)
+  valor_unitario  Decimal? @map("valor_unitario")
+  ubicacion       String?  @map("ubicacion") @db.VarChar(100)
+  id_estado       Int      @map("id_estado")
+  id_congregacion Int      @map("id_congregacion")
+  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  estado       Estado                 @relation(fields: [id_estado], references: [id_estado])
+  congregacion Congregacion           @relation(fields: [id_congregacion], references: [id_congregacion])
+  movimientos  MovimientoInventario[]
+  prestamos    PrestamoInventario[]
+
+  @@index([id_congregacion])
+  @@index([categoria])
+  @@map("inventario_item")
+}
+
+model MovimientoInventario {
+  id_movimiento  Int      @id @default(autoincrement())
+  id_item        Int      @map("id_item")
+  tipo           String   @map("tipo") @db.VarChar(20)
+  cantidad       Int      @map("cantidad")
+  fecha          DateTime @default(now()) @map("fecha") @db.Date
+  id_responsable Int      @map("id_responsable")
+  motivo         String?  @map("motivo") @db.VarChar(200)
+  documento_ref  String?  @map("documento_ref") @db.VarChar(100)
+  created_at     DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  item InventarioItem @relation(fields: [id_item], references: [id_item])
+
+  @@index([id_item])
+  @@index([fecha])
+  @@map("movimiento_inventario")
+}
+
+model PrestamoInventario {
+  id_prestamo               Int       @id @default(autoincrement())
+  id_item                   Int       @map("id_item")
+  id_ministerio             Int?      @map("id_ministerio")
+  fecha_prestamo            DateTime  @default(now()) @map("fecha_prestamo") @db.Date
+  fecha_devolucion_esperada DateTime  @map("fecha_devolucion_esperada") @db.Date
+  fecha_devolucion_real     DateTime? @map("fecha_devolucion_real") @db.Date
+  id_estado                 Int       @map("id_estado")
+  observaciones             String?   @map("observaciones") @db.Text
+  id_responsable            Int       @map("id_responsable")
+  created_at                DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at                DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  item        InventarioItem @relation(fields: [id_item], references: [id_item])
+  ministerios Ministerio?    @relation(fields: [id_ministerio], references: [id_ministerio])
+  estado      Estado         @relation(fields: [id_estado], references: [id_estado])
+
+  @@index([id_item])
+  @@index([id_estado])
+  @@map("prestamo_inventario")
+}
+
+// =============================================================
+// 11. MÓDULO COMUNICACIONES Y DOCUMENTOS
+// =============================================================
+model Comunicacion {
+  id_comunicacion   Int       @id @default(autoincrement())
+  asunto            String    @map("asunto") @db.VarChar(200)
+  mensaje           String    @map("mensaje") @db.Text
+  canal             String    @map("canal") @db.VarChar(20)
+  destinatario_tipo String    @map("destinatario_tipo") @db.VarChar(20)
+  id_congregacion   Int?      @map("id_congregacion")
+  id_ministerio     Int?      @map("id_ministerio")
+  id_enviado_por    Int       @map("id_enviado_por")
+  fecha_envio       DateTime? @map("fecha_envio") @db.Timestamptz
+  id_estado         Int       @map("id_estado")
+  created_at        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  congregacion Congregacion? @relation(fields: [id_congregacion], references: [id_congregacion])
+  ministerios  Ministerio?   @relation(fields: [id_ministerio], references: [id_ministerio])
+  estado       Estado        @relation(fields: [id_estado], references: [id_estado])
+
+  @@index([id_estado])
+  @@map("comunicacion")
+}
+
+model Documento {
+  id_documento   Int      @id @default(autoincrement())
+  id_miembro     Int      @map("id_miembro")
+  tipo_documento String   @map("tipo_documento") @db.VarChar(60)
+  numero_serie   String?  @unique @map("numero_serie") @db.VarChar(40)
+  fecha_emision  DateTime @default(now()) @map("fecha_emision") @db.Date
+  id_emitido_por Int      @map("id_emitido_por")
+  archivo_url    String?  @map("archivo_url") @db.VarChar(300)
+  id_estado      Int      @map("id_estado")
+  created_at     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updated_at     DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  miembro Miembro @relation(fields: [id_miembro], references: [id_miembro])
+  estado  Estado  @relation(fields: [id_estado], references: [id_estado])
+
+  @@index([id_miembro])
+  @@index([tipo_documento])
+  @@map("documento")
+}
+
+// =============================================================
+// 12. MÓDULO AUDITORÍA
+// =============================================================
+model AuditoriaLog {
+  id_log           BigInt   @id @default(autoincrement())
+  id_usuario       Int?     @map("id_usuario")
+  tabla_afectada   String   @map("tabla_afectada") @db.VarChar(60)
+  accion           String   @map("accion") @db.VarChar(10)
+  id_registro      Int?     @map("id_registro")
+  datos_anteriores Json?    @map("datos_anteriores")
+  datos_nuevos     Json?    @map("datos_nuevos")
+  fecha_hora       DateTime @default(now()) @map("fecha_hora") @db.Timestamptz
+  ip_origen        String?  @map("ip_origen") @db.Inet
+
+  @@index([id_usuario])
+  @@index([tabla_afectada])
+  @@index([fecha_hora])
+  @@map("auditoria_log")
+}
