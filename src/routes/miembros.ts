@@ -7,6 +7,8 @@ import {
 } from "../middleware/auth";
 import { requirePermission } from "../middleware/permissions";
 
+console.log("===-miembros.ts loaded===");
+
 const router = Router();
 
 // Helper to get numeric ID from params
@@ -81,20 +83,20 @@ router.get(
 	},
 );
 
-// Get all members - MINIMAL WITH LOGGING
+// Get all members - with auth
 router.get("/", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
-	console.log("GET /miembros called - user:", req.user);
 	try {
-		const congregacionFilter = getCongregacionFilter(req.user);
 		const miembros = await prisma.miembro.findMany({ 
-			where: congregacionFilter,
-			take: 100 
+			take: 100,
+			include: {
+				estado: true,
+				congregacion: true,
+				tipoMiembro: true
+			}
 		});
-		console.log("Found:", miembros.length);
 		res.json(miembros);
-	} catch (error: unknown) {
-		const err = error as Error;
-		console.error("Error:", err.message);
+	} catch (error) {
+		console.error("Error getting miembros:", error);
 		res.status(500).json({ error: "Error al obtener miembros" });
 	}
 });

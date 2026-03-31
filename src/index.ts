@@ -38,6 +38,12 @@ app.get("/health", (req: Request, res: Response) => {
 	res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// DEBUG route - sin middleware
+app.get("/debug/miembros", (req: Request, res: Response) => {
+	console.log("=== DEBUG /debug/miembros called ===");
+	res.json({ message: "DEBUG route works" });
+});
+
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 	console.error("Error:", err.message);
