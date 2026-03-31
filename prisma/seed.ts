@@ -1,12 +1,9 @@
 import { PrismaClient } from '@prisma/client';
-import { PrismaPg } from '@prisma/adapter-pg';
-import { Pool } from 'pg';
+import bcrypt from 'bcrypt';
 import 'dotenv/config';
 
 async function main() {
-  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
-  const adapter = new PrismaPg(pool);
-  const prisma = new PrismaClient({ adapter });
+  const prisma = new PrismaClient();
 
   try {
     console.log('Seeding database...');
@@ -52,6 +49,19 @@ async function main() {
     ]);
 
     console.log(`Created ${roles.length} roles`);
+
+    // Create usuario admin inicial
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    const adminUser = await prisma.usuarioSistema.create({
+      data: {
+        username: 'admin',
+        email: 'admin@iglesia.cl',
+        password_hash: hashedPassword,
+        id_rol: roles[0].id_rol, // ADMIN
+        id_estado: estados[0].id_estado // ACTIVO
+      }
+    });
+    console.log(`Created admin user: ${adminUser.username} (password: admin123)`);
 
     // Create TipoMiembro
     const tipos = await Promise.all([

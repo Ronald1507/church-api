@@ -7,24 +7,33 @@ const express_1 = require("express");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const db_1 = __importDefault(require("../config/db"));
+const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
-// Login
+// Login - acepta email o username
 router.post('/login', async (req, res) => {
     try {
-        const { username, password } = req.body;
-        if (!username || !password) {
-            return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+        const { email, username, password } = req.body;
+        // Aceptar email o username
+        const loginIdentifier = email || username;
+        if (!loginIdentifier || !password) {
+            return res.status(400).json({ message: 'Email/Usuario y contraseña requeridos' });
         }
-        const user = await db_1.default.usuarioSistema.findUnique({
-            where: { username },
+        // Buscar por email o username
+        const user = await db_1.default.usuarioSistema.findFirst({
+            where: {
+                OR: [
+                    { email: loginIdentifier },
+                    { username: loginIdentifier }
+                ]
+            },
             include: { rol: true, estado: true }
         });
         if (!user) {
-            return res.status(401).json({ error: 'Credenciales inválidas' });
+            return res.status(401).json({ message: 'Credenciales inválidas' });
         }
         const validPassword = await bcrypt_1.default.compare(password, user.password_hash);
         if (!validPassword) {
-            return res.status(401).json({ error: 'Credenciales inválidas' });
+            return res.status(401).json({ message: 'Credenciales inválidas' });
         }
         // Update last access
         await db_1.default.usuarioSistema.update({
@@ -107,7 +116,7 @@ router.post('/refresh', async (req, res) => {
     try {
         const { refreshToken } = req.body;
         if (!refreshToken) {
-            return res.status(400).json({ error: 'Token de actualización requerido' });
+            return res.status(400).json({ message: 'Token de actualización requerido' });
         }
         const decoded = jsonwebtoken_1.default.verify(refreshToken, process.env.JWT_REFRESH_SECRET || 'refresh-secret');
         const user = await db_1.default.usuarioSistema.findUnique({
@@ -115,7 +124,7 @@ router.post('/refresh', async (req, res) => {
             include: { rol: true }
         });
         if (!user) {
-            return res.status(401).json({ error: 'Usuario no encontrado' });
+            return res.status(401).json({ message: 'Usuario no encontrado' });
         }
         const newToken = jsonwebtoken_1.default.sign({
             userId: user.id_usuario,
@@ -125,7 +134,37 @@ router.post('/refresh', async (req, res) => {
         res.json({ token: newToken });
     }
     catch (error) {
-        res.status(401).json({ error: 'Token de actualización inválido' });
+        res.status(401).json({ message: 'Token de actualización inválido' });
+    }
+});
+// Get current user - Protected route
+router.get('/me', auth_1.authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user?.userId;
+        if (!userId) {
+            return res.status(401).json({ message: 'No autorizado' });
+        }
+        const user = await db_1.default.usuarioSistema.findUnique({
+            where: { id_usuario: userId },
+            include: {
+                rol: true,
+                estado: true
+            }
+        });
+        if (!user) {
+            return res.status(404).json({ message: 'Usuario no encontrado' });
+        }
+        res.json({
+            id: user.id_usuario,
+            username: user.username,
+            email: user.email,
+            role: user.rol.nombre,
+            estado: user.estado.nombre
+        });
+    }
+    catch (error) {
+        console.error('Get user error:', error);
+        res.status(500).json({ message: 'Error al obtener usuario' });
     }
 });
 exports.default = router;

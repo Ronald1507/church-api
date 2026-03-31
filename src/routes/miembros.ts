@@ -203,4 +203,31 @@ router.get('/meta/tipos', async (req: Request, res: Response) => {
   }
 });
 
+// Get metadata for member form (estados, congregaciones, tipos)
+router.get('/meta', async (req: Request, res: Response) => {
+  try {
+    const [estados, congregaciones, tipos, ministerios] = await Promise.all([
+      prisma.estado.findMany({
+        where: { entidad: 'MIEMBRO' },
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.congregacion.findMany({
+        include: { estado: true },
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.tipoMiembro.findMany({
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.ministerio.findMany({
+        include: { estado: true },
+        orderBy: { nombre: 'asc' }
+      })
+    ]);
+    res.json({ estados, congregaciones, tipos, ministerios });
+  } catch (error) {
+    console.error('Get metadata error:', error);
+    res.status(500).json({ error: 'Error al obtener metadatos' });
+  }
+});
+
 export default router;

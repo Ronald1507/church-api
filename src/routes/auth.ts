@@ -2,30 +2,39 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/db';
+import { authenticateToken, AuthRequest } from '../middleware/auth';
 
 const router = Router();
 
-// Login
+// Login - acepta email o username
 router.post('/login', async (req: Request, res: Response) => {
   try {
-    const { username, password } = req.body;
+    const { email, username, password } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+    // Aceptar email o username
+    const loginIdentifier = email || username;
+    if (!loginIdentifier || !password) {
+      return res.status(400).json({ message: 'Email/Usuario y contraseña requeridos' });
     }
 
-    const user = await prisma.usuarioSistema.findUnique({
-      where: { username },
+    // Buscar por email o username
+    const user = await prisma.usuarioSistema.findFirst({
+      where: {
+        OR: [
+          { email: loginIdentifier },
+          { username: loginIdentifier }
+        ]
+      },
       include: { rol: true, estado: true }
     });
 
     if (!user) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+      return res.status(401).json({ message: 'Credenciales inválidas' });
     }
 
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
-      return res.status(401).json({ error: 'Credenciales inválidas' });
+      return res.status(401).json({ message: 'Credenciales inválidas' });
     }
 
     // Update last access
@@ -130,7 +139,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     const { refreshToken } = req.body;
 
     if (!refreshToken) {
-      return res.status(400).json({ error: 'Token de actualización requerido' });
+      return res.status(400).json({ message: 'Token de actualización requerido' });
     }
 
     const decoded = jwt.verify(
@@ -144,7 +153,7 @@ router.post('/refresh', async (req: Request, res: Response) => {
     });
 
     if (!user) {
-      return res.status(401).json({ error: 'Usuario no encontrado' });
+      return res.status(401).json({ message: 'Usuario no encontrado' });
     }
 
     const newToken = jwt.sign(
@@ -159,7 +168,41 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
     res.json({ token: newToken });
   } catch (error) {
-    res.status(401).json({ error: 'Token de actualización inválido' });
+    res.status(401).json({ message: 'Token de actualización inválido' });
+  }
+});
+
+// Get current user - Protected route
+router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    
+    if (!userId) {
+      return res.status(401).json({ message: 'No autorizado' });
+    }
+
+    const user = await prisma.usuarioSistema.findUnique({
+      where: { id_usuario: userId },
+      include: { 
+        rol: true,
+        estado: true
+      }
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'Usuario no encontrado' });
+    }
+
+    res.json({
+      id: user.id_usuario,
+      username: user.username,
+      email: user.email,
+      role: user.rol.nombre,
+      estado: user.estado.nombre
+    });
+  } catch (error) {
+    console.error('Get user error:', error);
+    res.status(500).json({ message: 'Error al obtener usuario' });
   }
 });
 

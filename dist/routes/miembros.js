@@ -177,5 +177,32 @@ router.get('/meta/tipos', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener tipos de miembro' });
     }
 });
+// Get metadata for member form (estados, congregaciones, tipos)
+router.get('/meta', async (req, res) => {
+    try {
+        const [estados, congregaciones, tipos, ministerios] = await Promise.all([
+            db_1.default.estado.findMany({
+                where: { entidad: 'MIEMBRO' },
+                orderBy: { nombre: 'asc' }
+            }),
+            db_1.default.congregacion.findMany({
+                include: { estado: true },
+                orderBy: { nombre: 'asc' }
+            }),
+            db_1.default.tipoMiembro.findMany({
+                orderBy: { nombre: 'asc' }
+            }),
+            db_1.default.ministerio.findMany({
+                include: { estado: true },
+                orderBy: { nombre: 'asc' }
+            })
+        ]);
+        res.json({ estados, congregaciones, tipos, ministerios });
+    }
+    catch (error) {
+        console.error('Get metadata error:', error);
+        res.status(500).json({ error: 'Error al obtener metadatos' });
+    }
+});
 exports.default = router;
 //# sourceMappingURL=miembros.js.map
