@@ -23,7 +23,28 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Rutas
+// API directa para miembros inactivos - SE DEBE COLOCAR ANTES del router de miembros
+// porque Express匹配路由顺序
+app.get("/api/miembros-inactivos", async (req: Request, res: Response) => {
+	try {
+		console.log("=== /api/miembros-inactivos called ===");
+		const miembros = await prisma.miembro.findMany({ 
+			where: { id_estado: 6 }, // Solo inactivos
+			take: 100,
+			include: {
+				estado: true,
+				congregacion: true,
+				tipoMiembro: true
+			}
+		});
+		res.json(miembros);
+	} catch (error) {
+		console.error("Error getting inactive members:", error);
+		res.status(500).json({ error: "Error al obtener miembros inactivos" });
+	}
+});
+
+// Rutas - IMPORTANTE: miembroRoutes debe ir DESPUÉS de las rutas específicas
 app.use("/api/auth", authRoutes);
 app.use("/api/miembros", miembroRoutes);
 app.use("/api/congregaciones", congregacionRoutes);
@@ -42,6 +63,26 @@ app.get("/health", (req: Request, res: Response) => {
 app.get("/debug/miembros", (req: Request, res: Response) => {
 	console.log("=== DEBUG /debug/miembros called ===");
 	res.json({ message: "DEBUG route works" });
+});
+
+// API directa para miembros inactivos - sin /api/ para evitar conflicto con router
+app.get("/debug/miembros-inactivos", async (req: Request, res: Response) => {
+	try {
+		console.log("=== /debug/miembros-inactivos called ===");
+		const miembros = await prisma.miembro.findMany({ 
+			where: { id_estado: 6 }, // Solo inactivos
+			take: 100,
+			include: {
+				estado: true,
+				congregacion: true,
+				tipoMiembro: true
+			}
+		});
+		res.json(miembros);
+	} catch (error) {
+		console.error("Error getting inactive members:", error);
+		res.status(500).json({ error: "Error al obtener miembros inactivos" });
+	}
 });
 
 // Error handling middleware

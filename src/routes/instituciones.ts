@@ -52,13 +52,16 @@ router.get('/meta', authenticateToken, requirePermission('instituciones', 'leer'
   }
 });
 
-// Get all instituciones - filtrado por congregación
+// Get all instituciones - filtrado por congregación y solo activas
 router.get('/', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const congregacionFilter = getCongregacionFilter(req.user);
     
     const instituciones = await prisma.institucion.findMany({
-      where: congregacionFilter,
+      where: {
+        ...congregacionFilter,
+        id_estado: 8 // Solo instituciones activas
+      },
       include: {
         congregacion: true,
         estado: true
@@ -197,7 +200,7 @@ router.put('/:id', authenticateToken, requirePermission('instituciones', 'actual
   }
 });
 
-// Delete institucion
+// Delete institucion (eliminación lógica)
 router.delete('/:id', authenticateToken, requirePermission('instituciones', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
@@ -219,11 +222,13 @@ router.delete('/:id', authenticateToken, requirePermission('instituciones', 'eli
       return res.status(404).json({ error: 'Institución no encontrada' });
     }
     
-    await prisma.institucion.delete({
-      where: { id_institucion: id }
+    // Eliminación lógica: cambiar estado a Inactiva (id_estado = 9)
+    await prisma.institucion.update({
+      where: { id_institucion: id },
+      data: { id_estado: 9 }
     });
-
-    res.json({ message: 'Institución eliminada correctamente' });
+    
+    res.json({ message: 'Institución eliminada (inactiva)' });
   } catch (error) {
     console.error('Error deleting institucion:', error);
     res.status(500).json({ error: 'Error al eliminar institución' });

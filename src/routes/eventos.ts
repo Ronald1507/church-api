@@ -198,7 +198,7 @@ router.put('/:id', authenticateToken, requirePermission('eventos', 'actualizar')
   }
 });
 
-// Delete evento
+// Delete evento (eliminación lógica)
 router.delete('/:id', authenticateToken, requirePermission('eventos', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
@@ -220,11 +220,13 @@ router.delete('/:id', authenticateToken, requirePermission('eventos', 'eliminar'
       return res.status(404).json({ error: 'Evento no encontrado' });
     }
     
-    await prisma.evento.delete({
-      where: { id_evento: id }
+    // Eliminación lógica: cambiar estado a Cancelado
+    await prisma.evento.update({
+      where: { id_evento: id },
+      data: { id_estado: 11 } // ID de estado Cancelado para EVENTO
     });
 
-    res.json({ message: 'Evento eliminado correctamente' });
+    res.json({ message: 'Evento eliminado (cancelado)' });
   } catch (error) {
     console.error('Error deleting evento:', error);
     res.status(500).json({ error: 'Error al eliminar evento' });

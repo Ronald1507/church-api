@@ -193,7 +193,7 @@ router.put('/cuentas/:id', authenticateToken, requirePermission('finanzas', 'act
   }
 });
 
-// Delete cuenta
+// Delete cuenta (eliminación lógica)
 router.delete('/cuentas/:id', authenticateToken, requirePermission('finanzas', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
@@ -215,11 +215,13 @@ router.delete('/cuentas/:id', authenticateToken, requirePermission('finanzas', '
       return res.status(404).json({ error: 'Cuenta no encontrada' });
     }
     
-    await prisma.finanzaCuenta.delete({
-      where: { id_cuenta: id }
+    // Eliminación lógica: cambiar estado a Inactiva
+    await prisma.finanzaCuenta.update({
+      where: { id_cuenta: id },
+      data: { id_estado: 14 } // ID de estado Inactiva para CUENTA
     });
 
-    res.json({ message: 'Cuenta eliminada correctamente' });
+    res.json({ message: 'Cuenta eliminada (inactiva)' });
   } catch (error) {
     console.error('Error deleting cuenta:', error);
     res.status(500).json({ error: 'Error al eliminar cuenta' });
@@ -334,7 +336,7 @@ router.post('/transacciones', authenticateToken, requirePermission('finanzas', '
   }
 });
 
-// Delete transaccion
+// Delete transaccion (eliminación lógica)
 router.delete('/transacciones/:id', authenticateToken, requirePermission('finanzas', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
@@ -357,22 +359,13 @@ router.delete('/transacciones/:id', authenticateToken, requirePermission('finanz
       return res.status(404).json({ error: 'Transacción no encontrada' });
     }
     
-    // Update saldo de la cuenta
-    const cuenta = transaccion.cuenta;
-    const nuevoSaldo = transaccion.tipo === 'ingreso'
-      ? parseFloat(cuenta.saldo_actual.toString()) - parseFloat(transaccion.monto.toString())
-      : parseFloat(cuenta.saldo_actual.toString()) + parseFloat(transaccion.monto.toString());
-    
-    await prisma.finanzaCuenta.update({
-      where: { id_cuenta: cuenta.id_cuenta },
-      data: { saldo_actual: nuevoSaldo }
-    });
-    
-    await prisma.transaccion.delete({
-      where: { id_transaccion: id }
+    // Eliminación lógica: cambiar estado a Anulado (no ajusta saldo para mantener integridad)
+    await prisma.transaccion.update({
+      where: { id_transaccion: id },
+      data: { id_estado: 15 } // ID de estado Anulado para TRANSACCION
     });
 
-    res.json({ message: 'Transacción eliminada correctamente' });
+    res.json({ message: 'Transacción eliminada (anulada)' });
   } catch (error) {
     console.error('Error deleting transaccion:', error);
     res.status(500).json({ error: 'Error al eliminar transacción' });

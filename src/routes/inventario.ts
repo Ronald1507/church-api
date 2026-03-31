@@ -199,7 +199,7 @@ router.put('/:id', authenticateToken, requirePermission('inventario', 'actualiza
   }
 });
 
-// Delete item
+// Delete item (eliminación lógica)
 router.delete('/:id', authenticateToken, requirePermission('inventario', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
@@ -221,11 +221,13 @@ router.delete('/:id', authenticateToken, requirePermission('inventario', 'elimin
       return res.status(404).json({ error: 'Item no encontrado' });
     }
     
-    await prisma.inventarioItem.delete({
-      where: { id_item: id }
+    // Eliminación lógica: cambiar estado a Descontinuado
+    await prisma.inventarioItem.update({
+      where: { id_item: id },
+      data: { id_estado: 17 } // ID de estado Descontinuado para INVENTARIO
     });
 
-    res.json({ message: 'Item eliminado correctamente' });
+    res.json({ message: 'Item eliminado (descontinuado)' });
   } catch (error) {
     console.error('Error deleting item:', error);
     res.status(500).json({ error: 'Error al eliminar item' });

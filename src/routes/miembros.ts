@@ -83,10 +83,20 @@ router.get(
 	},
 );
 
-// Get all members - with auth
+// Get all members - solo activos por defecto
 router.get("/", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
 	try {
+		console.log("[GET /miembros] Request received");
+		const congregacionFilter = getCongregacionFilter(req.user);
+		const includeInactivos = req.query.inactivos === 'true';
+		
+		console.log("[GET /miembros] includeInactivos:", includeInactivos);
+		
 		const miembros = await prisma.miembro.findMany({ 
+			where: {
+				...congregacionFilter,
+				...(includeInactivos ? {} : { id_estado: 5 }) // Solo activos si no se pide inactivos
+			},
 			take: 100,
 			include: {
 				estado: true,
@@ -94,9 +104,64 @@ router.get("/", authenticateToken, requirePermission("miembros", "leer"), async 
 				tipoMiembro: true
 			}
 		});
+		console.log("[GET /miembros] Found:", miembros.length, "members");
 		res.json(miembros);
 	} catch (error) {
 		console.error("Error getting miembros:", error);
+		res.status(500).json({ error: "Error al obtener miembros" });
+	}
+});
+
+// Get all members - solo activos por defecto
+router.get("/", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
+	try {
+		console.log("[GET /miembros] Request received");
+		const congregacionFilter = getCongregacionFilter(req.user);
+		const includeInactivos = req.query.inactivos === 'true';
+		
+		console.log("[GET /miembros] includeInactivos:", includeInactivos);
+		
+		const miembros = await prisma.miembro.findMany({ 
+			where: {
+				...congregacionFilter,
+				...(includeInactivos ? {} : { id_estado: 5 }) // Solo activos si no se pide inactivos
+			},
+			take: 100,
+			include: {
+				estado: true,
+				congregacion: true,
+				tipoMiembro: true
+			}
+		});
+		console.log("[GET /miembros] Found:", miembros.length, "members");
+		res.json(miembros);
+	} catch (error) {
+		console.error("Error getting miembros:", error);
+		res.status(500).json({ error: "Error al obtener miembros" });
+	}
+});
+
+// Get all members including inactivos - solo inactivos (estado 6)
+router.get("/todos", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
+	try {
+		console.log("[GET /miembros/todos] Request received");
+		const congregacionFilter = getCongregacionFilter(req.user);
+		const miembros = await prisma.miembro.findMany({ 
+			where: {
+				...congregacionFilter,
+				id_estado: 6 // Solo inactivos
+			},
+			take: 100,
+			include: {
+				estado: true,
+				congregacion: true,
+				tipoMiembro: true
+			}
+		});
+		console.log("[GET /miembros/todos] Found:", miembros.length, "inactive members");
+		res.json(miembros);
+	} catch (error) {
+		console.error("Error getting todos los miembros:", error);
 		res.status(500).json({ error: "Error al obtener miembros" });
 	}
 });
@@ -304,7 +369,7 @@ router.put(
 	},
 );
 
-// Delete member
+// Delete member (eliminación lógica)
 router.delete(
 	"/:id",
 	authenticateToken,
@@ -332,17 +397,55 @@ router.delete(
 				return res.status(404).json({ error: "Miembro no encontrado" });
 			}
 
-			await prisma.miembro.delete({
+			// Eliminación lógica: cambiar estado a Inactivo
+			await prisma.miembro.update({
 				where: { id_miembro: memberId },
+				data: { id_estado: 6 } // ID de estado Inactivo para MIEMBRO
 			});
 
-			res.json({ message: "Miembro eliminado correctamente" });
+			res.json({ message: "Miembro eliminado (inactivo)" });
 		} catch (error) {
 			console.error("Delete miembro error:", error);
 			res.status(500).json({ error: "Error al eliminar miembro" });
 		}
 	},
 );
+
+// Toggle member status (activar/inactivar)
+router.patch("/:id/status", authenticateToken, requirePermission("miembros", "actualizar"), async (req: AuthRequest, res: Response) => {
+	try {
+		const memberId = getId(req);
+		if (memberId === null) {
+			return res.status(400).json({ error: "ID de miembro inválido" });
+		}
+
+		const congregacionFilter = getCongregacionFilter(req.user);
+
+		const existingMiembro = await prisma.miembro.findFirst({
+			where: {
+				id_miembro: memberId,
+				...congregacionFilter,
+			},
+		});
+
+		if (!existingMiembro) {
+			return res.status(404).json({ error: "Miembro no encontrado" });
+		}
+
+		// Toggle: si está inactivo(6) -> activo(5), si está activo(5) -> inactivo(6)
+		const nuevoEstado = existingMiembro.id_estado === 5 ? 6 : 5;
+		
+		await prisma.miembro.update({
+			where: { id_miembro: memberId },
+			data: { id_estado: nuevoEstado }
+		});
+
+		res.json({ message: nuevoEstado === 5 ? "Miembro activado" : "Miembro inactivado" });
+	} catch (error) {
+		console.error("Toggle miembro status error:", error);
+		res.status(500).json({ error: "Error al cambiar estado del miembro" });
+	}
+});
 
 // Get member types
 // MOVED TO TOP - duplicates removed

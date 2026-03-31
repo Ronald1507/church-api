@@ -183,7 +183,7 @@ router.put('/:id', authenticateToken, requirePermission('usuarios', 'actualizar'
   }
 });
 
-// Delete user - Solo admin
+// Delete user - Solo admin (eliminación lógica)
 router.delete('/:id', authenticateToken, requirePermission('usuarios', 'eliminar'), async (req: AuthRequest, res: Response) => {
 
   try {
@@ -197,11 +197,13 @@ router.delete('/:id', authenticateToken, requirePermission('usuarios', 'eliminar
       return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
     }
     
-    await prisma.usuarioSistema.delete({
-      where: { id_usuario: id }
+    // Eliminación lógica: cambiar estado a Inactivo
+    await prisma.usuarioSistema.update({
+      where: { id_usuario: id },
+      data: { id_estado: 2 } // ID de estado Inactivo para USUARIO
     });
 
-    res.json({ message: 'Usuario eliminado correctamente' });
+    res.json({ message: 'Usuario eliminado (inactivo)' });
   } catch (error) {
     console.error('Error deleting usuario:', error);
     res.status(500).json({ error: 'Error al eliminar usuario' });

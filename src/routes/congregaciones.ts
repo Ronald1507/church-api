@@ -152,7 +152,7 @@ router.put('/:id', authenticateToken, requirePermission('configuracion', 'admin'
   }
 });
 
-// Delete congregacion - Solo SuperAdmin
+// Delete congregacion - Solo SuperAdmin (eliminación lógica)
 router.delete('/:id', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
@@ -160,11 +160,13 @@ router.delete('/:id', authenticateToken, requirePermission('configuracion', 'adm
       return res.status(400).json({ error: 'ID inválido' });
     }
     
-    await prisma.congregacion.delete({
-      where: { id_congregacion: id }
+    // Eliminación lógica: cambiar estado a Inactivo
+    await prisma.congregacion.update({
+      where: { id_congregacion: id },
+      data: { id_estado: 4 } // ID de estado Inactivo para CONGREGACION
     });
 
-    res.json({ message: 'Congregación eliminada correctamente' });
+    res.json({ message: 'Congregación eliminada (inactiva)' });
   } catch (error) {
     console.error('Error deleting congregacion:', error);
     res.status(500).json({ error: 'Error al eliminar congregación' });
