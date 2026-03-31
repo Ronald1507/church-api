@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
+const auth_1 = require("../middleware/auth");
+const permissions_1 = require("../middleware/permissions");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -12,13 +14,25 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Get all congregaciones
-router.get('/', async (req, res) => {
+// Get all congregaciones - Solo SuperAdmin puede ver todas las congregaciones
+// Los Admin ven su propia congregación
+router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'leer'), async (req, res) => {
+    const { nivel, id_congregacion } = req.user || {};
+    // Solo SuperAdmin puede ver todas las congregaciones
+    if (nivel !== 'SUPERADMIN') {
+        // Si es Admin y tiene congregación asignada, devolver solo esa
+        if (nivel === 'ADMIN' && id_congregacion) {
+            const congregacion = await db_1.default.congregacion.findUnique({
+                where: { id_congregacion },
+                include: { estado: true }
+            });
+            return res.json(congregacion ? [congregacion] : []);
+        }
+        return res.json([]);
+    }
     try {
         const congregaciones = await db_1.default.congregacion.findMany({
-            include: {
-                estado: true
-            },
+            include: { estado: true },
             orderBy: { nombre: 'asc' }
         });
         res.json(congregaciones);
@@ -28,12 +42,17 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener congregaciones' });
     }
 });
-// Get congregacion by ID
-router.get('/:id', async (req, res) => {
+// Get congregacion by ID - Solo SuperAdmin puede ver cualquier congregación
+router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'leer'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
+        }
+        // Verificar acceso - SuperAdmin ve todo, Admin solo su congregación
+        const { nivel, id_congregacion } = req.user || {};
+        if (nivel !== 'SUPERADMIN' && (nivel !== 'ADMIN' || id_congregacion !== id)) {
+            return res.status(403).json({ error: 'No tienes acceso a esta congregación' });
         }
         const congregacion = await db_1.default.congregacion.findUnique({
             where: { id_congregacion: id },
@@ -59,8 +78,8 @@ router.get('/:id', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener congregación' });
     }
 });
-// Create congregacion
-router.post('/', async (req, res) => {
+// Create congregacion - Solo SuperAdmin
+router.post('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'admin'), async (req, res) => {
     try {
         const { nombre, direccion, ciudad, region, id_pastor, telefono, email, id_estado } = req.body;
         if (!nombre || !id_estado) {
@@ -72,14 +91,12 @@ router.post('/', async (req, res) => {
                 direccion,
                 ciudad,
                 region,
-                id_pastor,
+                id_pastor: id_pastor ? parseInt(id_pastor) : null,
                 telefono,
                 email,
                 id_estado
             },
-            include: {
-                estado: true
-            }
+            include: { estado: true }
         });
         res.status(201).json(newCongregacion);
     }
@@ -88,8 +105,8 @@ router.post('/', async (req, res) => {
         res.status(500).json({ error: 'Error al crear congregación' });
     }
 });
-// Update congregacion
-router.put('/:id', async (req, res) => {
+// Update congregacion - Solo SuperAdmin
+router.put('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'admin'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
@@ -102,9 +119,7 @@ router.put('/:id', async (req, res) => {
         const updatedCongregacion = await db_1.default.congregacion.update({
             where: { id_congregacion: id },
             data: updateData,
-            include: {
-                estado: true
-            }
+            include: { estado: true }
         });
         res.json(updatedCongregacion);
     }
@@ -113,8 +128,8 @@ router.put('/:id', async (req, res) => {
         res.status(500).json({ error: 'Error al actualizar congregación' });
     }
 });
-// Delete congregacion
-router.delete('/:id', async (req, res) => {
+// Delete congregacion - Solo SuperAdmin
+router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'admin'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
@@ -130,8 +145,8 @@ router.delete('/:id', async (req, res) => {
         res.status(500).json({ error: 'Error al eliminar congregación' });
     }
 });
-// Get metadata for congregacion form
-router.get('/meta', async (req, res) => {
+// Get metadata for congregacion form - Solo SuperAdmin
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'admin'), async (req, res) => {
     try {
         const estados = await db_1.default.estado.findMany({
             where: { entidad: 'CONGREGACION' },

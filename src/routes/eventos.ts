@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
+import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
 
@@ -10,10 +12,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get all eventos
-router.get('/', async (req: Request, res: Response) => {
+// Get all eventos - filtrado por congregación
+router.get('/', authenticateToken, requirePermission('eventos', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
     const eventos = await prisma.evento.findMany({
+      where: congregacionFilter,
       include: {
         congregacion: true,
         estado: true
@@ -27,16 +32,21 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get evento by ID
-router.get('/:id', async (req: Request, res: Response) => {
+// Get evento by ID - filtrado por congregación
+router.get('/:id', authenticateToken, requirePermission('eventos', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
     }
     
-    const evento = await prisma.evento.findUnique({
-      where: { id_evento: id },
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const evento = await prisma.evento.findFirst({
+      where: {
+        id_evento: id,
+        ...congregacionFilter
+      },
       include: {
         congregacion: true,
         estado: true,
@@ -58,12 +68,23 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // Create evento
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authenticateToken, requirePermission('eventos', 'crear'), async (req: AuthRequest, res: Response) => {
   try {
     const { nombre, tipo, descripcion, fecha_inicio, fecha_fin, lugar, id_congregacion, capacidad_max, id_estado } = req.body;
 
-    if (!nombre || !fecha_inicio || !id_congregacion || !id_estado) {
+    if (!nombre || !fecha_inicio || !id_estado) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+
+    // Si no es admin, forzar la congregación del usuario
+    let congregacionId = id_congregacion;
+    const { nivel } = req.user || {};
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionId = req.user.id_congregacion;
+    }
+
+    if (!congregacionId) {
+      return res.status(400).json({ error: 'Debe especificar una congregación' });
     }
 
     const newEvento = await prisma.evento.create({
@@ -74,8 +95,8 @@ router.post('/', async (req: Request, res: Response) => {
         fecha_inicio: new Date(fecha_inicio),
         fecha_fin: fecha_fin ? new Date(fecha_fin) : null,
         lugar,
-        id_congregacion,
-        capacidad_max,
+        id_congregacion: congregacionId,
+        capacidad_max: capacidad_max ? parseInt(capacidad_max) : null,
         id_estado
       },
       include: {
@@ -92,11 +113,25 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // Update evento
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', authenticateToken, requirePermission('eventos', 'actualizar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    // Verificar que el evento pertenezca a la congregación del usuario
+    const existingEvento = await prisma.evento.findFirst({
+      where: {
+        id_evento: id,
+        ...congregacionFilter
+      }
+    });
+
+    if (!existingEvento) {
+      return res.status(404).json({ error: 'Evento no encontrado' });
     }
     
     const updateData = { ...req.body };
@@ -110,6 +145,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     if (updateData.fecha_fin) {
       updateData.fecha_fin = new Date(updateData.fecha_fin);
+    }
+
+    // Si no es admin, no permitir cambiar la congregación
+    const { nivel } = req.user || {};
+    if (nivel !== 'ADMIN' && updateData.id_congregacion) {
+      delete updateData.id_congregacion;
     }
 
     const updatedEvento = await prisma.evento.update({
@@ -129,11 +170,25 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // Delete evento
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', authenticateToken, requirePermission('eventos', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    // Verificar que el evento pertenezca a la congregación del usuario
+    const existingEvento = await prisma.evento.findFirst({
+      where: {
+        id_evento: id,
+        ...congregacionFilter
+      }
+    });
+
+    if (!existingEvento) {
+      return res.status(404).json({ error: 'Evento no encontrado' });
     }
     
     await prisma.evento.delete({
@@ -148,14 +203,23 @@ router.delete('/:id', async (req: Request, res: Response) => {
 });
 
 // Get metadata for evento form
-router.get('/meta', async (req: Request, res: Response) => {
+router.get('/meta', authenticateToken, requirePermission('eventos', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    let congregacionFilter = {};
+    const { nivel } = req.user || {};
+    
+    // Si no es admin, solo puede ver su congregación
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    }
+
     const [estados, congregaciones] = await Promise.all([
       prisma.estado.findMany({
         where: { entidad: 'EVENTO' },
         orderBy: { nombre: 'asc' }
       }),
       prisma.congregacion.findMany({
+        where: congregacionFilter,
         include: { estado: true },
         orderBy: { nombre: 'asc' }
       })

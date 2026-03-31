@@ -26,7 +26,7 @@ router.post('/login', async (req, res) => {
                     { username: loginIdentifier }
                 ]
             },
-            include: { rol: true, estado: true }
+            include: { rol: true, estado: true, congregacion: true }
         });
         if (!user) {
             return res.status(401).json({ message: 'Credenciales inválidas' });
@@ -43,7 +43,8 @@ router.post('/login', async (req, res) => {
         const token = jsonwebtoken_1.default.sign({
             userId: user.id_usuario,
             username: user.username,
-            role: user.rol.nombre
+            nivel: user.nivel || 'USUARIO',
+            id_congregacion: user.id_congregacion
         }, process.env.JWT_SECRET || 'secret', { expiresIn: process.env.JWT_EXPIRES_IN || '15m' });
         const refreshToken = jsonwebtoken_1.default.sign({ userId: user.id_usuario }, process.env.JWT_REFRESH_SECRET || 'refresh-secret', { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d' });
         res.json({
@@ -53,7 +54,8 @@ router.post('/login', async (req, res) => {
                 id: user.id_usuario,
                 username: user.username,
                 email: user.email,
-                role: user.rol.nombre
+                nivel: user.nivel || 'USUARIO',
+                id_congregacion: user.id_congregacion
             }
         });
     }
@@ -148,7 +150,8 @@ router.get('/me', auth_1.authenticateToken, async (req, res) => {
             where: { id_usuario: userId },
             include: {
                 rol: true,
-                estado: true
+                estado: true,
+                congregacion: true
             }
         });
         if (!user) {
@@ -159,6 +162,8 @@ router.get('/me', auth_1.authenticateToken, async (req, res) => {
             username: user.username,
             email: user.email,
             role: user.rol.nombre,
+            id_congregacion: user.id_congregacion,
+            congregacion: user.congregacion,
             estado: user.estado.nombre
         });
     }

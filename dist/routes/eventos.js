@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
+const auth_1 = require("../middleware/auth");
+const permissions_1 = require("../middleware/permissions");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -12,10 +14,12 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Get all eventos
-router.get('/', async (req, res) => {
+// Get all eventos - filtrado por congregación
+router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
     try {
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const eventos = await db_1.default.evento.findMany({
+            where: congregacionFilter,
             include: {
                 congregacion: true,
                 estado: true
@@ -29,15 +33,19 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener eventos' });
     }
 });
-// Get evento by ID
-router.get('/:id', async (req, res) => {
+// Get evento by ID - filtrado por congregación
+router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
-        const evento = await db_1.default.evento.findUnique({
-            where: { id_evento: id },
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const evento = await db_1.default.evento.findFirst({
+            where: {
+                id_evento: id,
+                ...congregacionFilter
+            },
             include: {
                 congregacion: true,
                 estado: true,
@@ -57,11 +65,20 @@ router.get('/:id', async (req, res) => {
     }
 });
 // Create evento
-router.post('/', async (req, res) => {
+router.post('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'crear'), async (req, res) => {
     try {
         const { nombre, tipo, descripcion, fecha_inicio, fecha_fin, lugar, id_congregacion, capacidad_max, id_estado } = req.body;
-        if (!nombre || !fecha_inicio || !id_congregacion || !id_estado) {
+        if (!nombre || !fecha_inicio || !id_estado) {
             return res.status(400).json({ error: 'Faltan campos requeridos' });
+        }
+        // Si no es admin, forzar la congregación del usuario
+        let congregacionId = id_congregacion;
+        const { nivel } = req.user || {};
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionId = req.user.id_congregacion;
+        }
+        if (!congregacionId) {
+            return res.status(400).json({ error: 'Debe especificar una congregación' });
         }
         const newEvento = await db_1.default.evento.create({
             data: {
@@ -71,8 +88,8 @@ router.post('/', async (req, res) => {
                 fecha_inicio: new Date(fecha_inicio),
                 fecha_fin: fecha_fin ? new Date(fecha_fin) : null,
                 lugar,
-                id_congregacion,
-                capacidad_max,
+                id_congregacion: congregacionId,
+                capacidad_max: capacidad_max ? parseInt(capacidad_max) : null,
                 id_estado
             },
             include: {
@@ -88,11 +105,22 @@ router.post('/', async (req, res) => {
     }
 });
 // Update evento
-router.put('/:id', async (req, res) => {
+router.put('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'actualizar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Verificar que el evento pertenezca a la congregación del usuario
+        const existingEvento = await db_1.default.evento.findFirst({
+            where: {
+                id_evento: id,
+                ...congregacionFilter
+            }
+        });
+        if (!existingEvento) {
+            return res.status(404).json({ error: 'Evento no encontrado' });
         }
         const updateData = { ...req.body };
         delete updateData.id_evento;
@@ -104,6 +132,11 @@ router.put('/:id', async (req, res) => {
         }
         if (updateData.fecha_fin) {
             updateData.fecha_fin = new Date(updateData.fecha_fin);
+        }
+        // Si no es admin, no permitir cambiar la congregación
+        const { nivel } = req.user || {};
+        if (nivel !== 'ADMIN' && updateData.id_congregacion) {
+            delete updateData.id_congregacion;
         }
         const updatedEvento = await db_1.default.evento.update({
             where: { id_evento: id },
@@ -121,11 +154,22 @@ router.put('/:id', async (req, res) => {
     }
 });
 // Delete evento
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'eliminar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Verificar que el evento pertenezca a la congregación del usuario
+        const existingEvento = await db_1.default.evento.findFirst({
+            where: {
+                id_evento: id,
+                ...congregacionFilter
+            }
+        });
+        if (!existingEvento) {
+            return res.status(404).json({ error: 'Evento no encontrado' });
         }
         await db_1.default.evento.delete({
             where: { id_evento: id }
@@ -138,14 +182,21 @@ router.delete('/:id', async (req, res) => {
     }
 });
 // Get metadata for evento form
-router.get('/meta', async (req, res) => {
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
     try {
+        let congregacionFilter = {};
+        const { nivel } = req.user || {};
+        // Si no es admin, solo puede ver su congregación
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionFilter = { id_congregacion: req.user.id_congregacion };
+        }
         const [estados, congregaciones] = await Promise.all([
             db_1.default.estado.findMany({
                 where: { entidad: 'EVENTO' },
                 orderBy: { nombre: 'asc' }
             }),
             db_1.default.congregacion.findMany({
+                where: congregacionFilter,
                 include: { estado: true },
                 orderBy: { nombre: 'asc' }
             })

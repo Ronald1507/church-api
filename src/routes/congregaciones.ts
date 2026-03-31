@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
+import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
 
@@ -10,13 +12,27 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get all congregaciones
-router.get('/', async (req: Request, res: Response) => {
+// Get all congregaciones - Solo SuperAdmin puede ver todas las congregaciones
+// Los Admin ven su propia congregación
+router.get('/', authenticateToken, requirePermission('configuracion', 'leer'), async (req: AuthRequest, res: Response) => {
+  const { nivel, id_congregacion } = req.user || {};
+
+  // Solo SuperAdmin puede ver todas las congregaciones
+  if (nivel !== 'SUPERADMIN') {
+    // Si es Admin y tiene congregación asignada, devolver solo esa
+    if (nivel === 'ADMIN' && id_congregacion) {
+      const congregacion = await prisma.congregacion.findUnique({
+        where: { id_congregacion },
+        include: { estado: true }
+      });
+      return res.json(congregacion ? [congregacion] : []);
+    }
+    return res.json([]);
+  }
+
   try {
     const congregaciones = await prisma.congregacion.findMany({
-      include: {
-        estado: true
-      },
+      include: { estado: true },
       orderBy: { nombre: 'asc' }
     });
     res.json(congregaciones);
@@ -26,12 +42,18 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get congregacion by ID
-router.get('/:id', async (req: Request, res: Response) => {
+// Get congregacion by ID - Solo SuperAdmin puede ver cualquier congregación
+router.get('/:id', authenticateToken, requirePermission('configuracion', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    // Verificar acceso - SuperAdmin ve todo, Admin solo su congregación
+    const { nivel, id_congregacion } = req.user || {};
+    if (nivel !== 'SUPERADMIN' && (nivel !== 'ADMIN' || id_congregacion !== id)) {
+      return res.status(403).json({ error: 'No tienes acceso a esta congregación' });
     }
     
     const congregacion = await prisma.congregacion.findUnique({
@@ -60,8 +82,8 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Create congregacion
-router.post('/', async (req: Request, res: Response) => {
+// Create congregacion - Solo SuperAdmin
+router.post('/', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
   try {
     const { nombre, direccion, ciudad, region, id_pastor, telefono, email, id_estado } = req.body;
 
@@ -75,14 +97,12 @@ router.post('/', async (req: Request, res: Response) => {
         direccion,
         ciudad,
         region,
-        id_pastor,
+        id_pastor: id_pastor ? parseInt(id_pastor) : null,
         telefono,
         email,
         id_estado
       },
-      include: {
-        estado: true
-      }
+      include: { estado: true }
     });
 
     res.status(201).json(newCongregacion);
@@ -92,8 +112,8 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// Update congregacion
-router.put('/:id', async (req: Request, res: Response) => {
+// Update congregacion - Solo SuperAdmin
+router.put('/:id', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
@@ -108,9 +128,7 @@ router.put('/:id', async (req: Request, res: Response) => {
     const updatedCongregacion = await prisma.congregacion.update({
       where: { id_congregacion: id },
       data: updateData,
-      include: {
-        estado: true
-      }
+      include: { estado: true }
     });
 
     res.json(updatedCongregacion);
@@ -120,8 +138,8 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Delete congregacion
-router.delete('/:id', async (req: Request, res: Response) => {
+// Delete congregacion - Solo SuperAdmin
+router.delete('/:id', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
@@ -139,8 +157,8 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Get metadata for congregacion form
-router.get('/meta', async (req: Request, res: Response) => {
+// Get metadata for congregacion form - Solo SuperAdmin
+router.get('/meta', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
   try {
     const estados = await prisma.estado.findMany({
       where: { entidad: 'CONGREGACION' },

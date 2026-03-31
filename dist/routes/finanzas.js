@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
+const auth_1 = require("../middleware/auth");
+const permissions_1 = require("../middleware/permissions");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -13,10 +15,12 @@ const getId = (req) => {
     return isNaN(num) ? null : num;
 };
 // ==================== CUENTAS ====================
-// Get all cuentas
-router.get('/cuentas', async (req, res) => {
+// Get all cuentas - filtrado por congregación
+router.get('/cuentas', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'leer'), async (req, res) => {
     try {
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const cuentas = await db_1.default.finanzaCuenta.findMany({
+            where: congregacionFilter,
             include: {
                 congregacion: true,
                 estado: true
@@ -30,15 +34,19 @@ router.get('/cuentas', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener cuentas' });
     }
 });
-// Get cuenta by ID
-router.get('/cuentas/:id', async (req, res) => {
+// Get cuenta by ID - filtrado por congregación
+router.get('/cuentas/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'leer'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
-        const cuenta = await db_1.default.finanzaCuenta.findUnique({
-            where: { id_cuenta: id },
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const cuenta = await db_1.default.finanzaCuenta.findFirst({
+            where: {
+                id_cuenta: id,
+                ...congregacionFilter
+            },
             include: {
                 congregacion: true,
                 estado: true,
@@ -59,11 +67,20 @@ router.get('/cuentas/:id', async (req, res) => {
     }
 });
 // Create cuenta
-router.post('/cuentas', async (req, res) => {
+router.post('/cuentas', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'crear'), async (req, res) => {
     try {
         const { nombre, tipo, descripcion, saldo_actual, id_congregacion, id_estado } = req.body;
-        if (!nombre || !tipo || !id_congregacion || !id_estado) {
+        if (!nombre || !tipo || !id_estado) {
             return res.status(400).json({ error: 'Faltan campos requeridos' });
+        }
+        // Si no es admin, forzar la congregación del usuario
+        let congregacionId = id_congregacion;
+        const { nivel } = req.user || {};
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionId = req.user.id_congregacion;
+        }
+        if (!congregacionId) {
+            return res.status(400).json({ error: 'Debe especificar una congregación' });
         }
         const newCuenta = await db_1.default.finanzaCuenta.create({
             data: {
@@ -71,7 +88,7 @@ router.post('/cuentas', async (req, res) => {
                 tipo,
                 descripcion,
                 saldo_actual: saldo_actual || 0,
-                id_congregacion,
+                id_congregacion: congregacionId,
                 id_estado
             },
             include: {
@@ -87,16 +104,33 @@ router.post('/cuentas', async (req, res) => {
     }
 });
 // Update cuenta
-router.put('/cuentas/:id', async (req, res) => {
+router.put('/cuentas/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'actualizar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Verificar que la cuenta pertenezca a la congregación del usuario
+        const existingCuenta = await db_1.default.finanzaCuenta.findFirst({
+            where: {
+                id_cuenta: id,
+                ...congregacionFilter
+            }
+        });
+        if (!existingCuenta) {
+            return res.status(404).json({ error: 'Cuenta no encontrada' });
+        }
         const updateData = { ...req.body };
         delete updateData.id_cuenta;
         delete updateData.created_at;
         delete updateData.updated_at;
+        // Si no es admin, no permitir cambiar la congregación ni el saldo
+        const { nivel } = req.user || {};
+        if (nivel !== 'ADMIN') {
+            delete updateData.id_congregacion;
+            delete updateData.saldo_actual;
+        }
         const updatedCuenta = await db_1.default.finanzaCuenta.update({
             where: { id_cuenta: id },
             data: updateData,
@@ -113,11 +147,22 @@ router.put('/cuentas/:id', async (req, res) => {
     }
 });
 // Delete cuenta
-router.delete('/cuentas/:id', async (req, res) => {
+router.delete('/cuentas/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'eliminar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Verificar que la cuenta pertenezca a la congregación del usuario
+        const existingCuenta = await db_1.default.finanzaCuenta.findFirst({
+            where: {
+                id_cuenta: id,
+                ...congregacionFilter
+            }
+        });
+        if (!existingCuenta) {
+            return res.status(404).json({ error: 'Cuenta no encontrada' });
         }
         await db_1.default.finanzaCuenta.delete({
             where: { id_cuenta: id }
@@ -130,10 +175,14 @@ router.delete('/cuentas/:id', async (req, res) => {
     }
 });
 // ==================== TRANSACCIONES ====================
-// Get all transacciones
-router.get('/transacciones', async (req, res) => {
+// Get all transacciones - filtrado por congregación
+router.get('/transacciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'leer'), async (req, res) => {
     try {
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const transacciones = await db_1.default.transaccion.findMany({
+            where: {
+                cuenta: congregacionFilter
+            },
             include: {
                 cuenta: true,
                 estado: true
@@ -147,15 +196,19 @@ router.get('/transacciones', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener transacciones' });
     }
 });
-// Get transacciones by cuenta
-router.get('/cuentas/:id/transacciones', async (req, res) => {
+// Get transacciones by cuenta - filtrado por congregación
+router.get('/cuentas/:id/transacciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'leer'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const transacciones = await db_1.default.transaccion.findMany({
-            where: { id_cuenta: id },
+            where: {
+                id_cuenta: id,
+                cuenta: congregacionFilter
+            },
             include: {
                 cuenta: true,
                 estado: true
@@ -170,21 +223,32 @@ router.get('/cuentas/:id/transacciones', async (req, res) => {
     }
 });
 // Create transaccion
-router.post('/transacciones', async (req, res) => {
+router.post('/transacciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'crear'), async (req, res) => {
     try {
         const { id_cuenta, tipo, concepto, monto, fecha, metodo_pago, id_registrado_por, id_estado } = req.body;
         if (!id_cuenta || !tipo || !concepto || !monto || !id_estado) {
             return res.status(400).json({ error: 'Faltan campos requeridos' });
         }
+        // Verificar que la cuenta pertenezca a la congregación del usuario
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const cuenta = await db_1.default.finanzaCuenta.findFirst({
+            where: {
+                id_cuenta: parseInt(id_cuenta),
+                ...congregacionFilter
+            }
+        });
+        if (!cuenta) {
+            return res.status(404).json({ error: 'Cuenta no encontrada' });
+        }
         const newTransaccion = await db_1.default.transaccion.create({
             data: {
-                id_cuenta,
+                id_cuenta: parseInt(id_cuenta),
                 tipo,
                 concepto,
                 monto: parseFloat(monto),
                 fecha: fecha ? new Date(fecha) : new Date(),
                 metodo_pago,
-                id_registrado_por,
+                id_registrado_por: id_registrado_por ? parseInt(id_registrado_por) : (req.user?.userId ?? 0),
                 id_estado
             },
             include: {
@@ -193,16 +257,13 @@ router.post('/transacciones', async (req, res) => {
             }
         });
         // Update saldo de la cuenta
-        const cuenta = await db_1.default.finanzaCuenta.findUnique({ where: { id_cuenta } });
-        if (cuenta) {
-            const nuevoSaldo = tipo === 'ingreso'
-                ? parseFloat(cuenta.saldo_actual.toString()) + parseFloat(monto)
-                : parseFloat(cuenta.saldo_actual.toString()) - parseFloat(monto);
-            await db_1.default.finanzaCuenta.update({
-                where: { id_cuenta },
-                data: { saldo_actual: nuevoSaldo }
-            });
-        }
+        const nuevoSaldo = tipo === 'ingreso'
+            ? parseFloat(cuenta.saldo_actual.toString()) + parseFloat(monto)
+            : parseFloat(cuenta.saldo_actual.toString()) - parseFloat(monto);
+        await db_1.default.finanzaCuenta.update({
+            where: { id_cuenta: parseInt(id_cuenta) },
+            data: { saldo_actual: nuevoSaldo }
+        });
         res.status(201).json(newTransaccion);
     }
     catch (error) {
@@ -211,31 +272,33 @@ router.post('/transacciones', async (req, res) => {
     }
 });
 // Delete transaccion
-router.delete('/transacciones/:id', async (req, res) => {
+router.delete('/transacciones/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'eliminar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
-        // Get transaccion first to update saldo
-        const transaccion = await db_1.default.transaccion.findUnique({
-            where: { id_transaccion: id }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Get transaccion first to verify access
+        const transaccion = await db_1.default.transaccion.findFirst({
+            where: {
+                id_transaccion: id,
+                cuenta: congregacionFilter
+            },
+            include: { cuenta: true }
         });
-        if (transaccion) {
-            // Update saldo de la cuenta
-            const cuenta = await db_1.default.finanzaCuenta.findUnique({
-                where: { id_cuenta: transaccion.id_cuenta }
-            });
-            if (cuenta) {
-                const nuevoSaldo = transaccion.tipo === 'ingreso'
-                    ? parseFloat(cuenta.saldo_actual.toString()) - parseFloat(transaccion.monto.toString())
-                    : parseFloat(cuenta.saldo_actual.toString()) + parseFloat(transaccion.monto.toString());
-                await db_1.default.finanzaCuenta.update({
-                    where: { id_cuenta: transaccion.id_cuenta },
-                    data: { saldo_actual: nuevoSaldo }
-                });
-            }
+        if (!transaccion) {
+            return res.status(404).json({ error: 'Transacción no encontrada' });
         }
+        // Update saldo de la cuenta
+        const cuenta = transaccion.cuenta;
+        const nuevoSaldo = transaccion.tipo === 'ingreso'
+            ? parseFloat(cuenta.saldo_actual.toString()) - parseFloat(transaccion.monto.toString())
+            : parseFloat(cuenta.saldo_actual.toString()) + parseFloat(transaccion.monto.toString());
+        await db_1.default.finanzaCuenta.update({
+            where: { id_cuenta: cuenta.id_cuenta },
+            data: { saldo_actual: nuevoSaldo }
+        });
         await db_1.default.transaccion.delete({
             where: { id_transaccion: id }
         });
@@ -248,14 +311,21 @@ router.delete('/transacciones/:id', async (req, res) => {
 });
 // ==================== METADATA ====================
 // Get metadata for finance forms
-router.get('/meta', async (req, res) => {
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'leer'), async (req, res) => {
     try {
+        let congregacionFilter = {};
+        const { nivel } = req.user || {};
+        // Si no es admin, solo puede ver su congregación
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionFilter = { id_congregacion: req.user.id_congregacion };
+        }
         const [estados, congregaciones] = await Promise.all([
             db_1.default.estado.findMany({
                 where: { entidad: 'TRANSACCION' },
                 orderBy: { nombre: 'asc' }
             }),
             db_1.default.congregacion.findMany({
+                where: congregacionFilter,
                 include: { estado: true },
                 orderBy: { nombre: 'asc' }
             })

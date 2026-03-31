@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
+const auth_1 = require("../middleware/auth");
+const permissions_1 = require("../middleware/permissions");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -13,10 +15,12 @@ const getId = (req) => {
     return isNaN(num) ? null : num;
 };
 // ==================== ITEMS ====================
-// Get all items
-router.get('/', async (req, res) => {
+// Get all items - filtrado por congregación
+router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
     try {
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const items = await db_1.default.inventarioItem.findMany({
+            where: congregacionFilter,
             include: {
                 congregacion: true,
                 estado: true
@@ -30,15 +34,19 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener items' });
     }
 });
-// Get item by ID
-router.get('/:id', async (req, res) => {
+// Get item by ID - filtrado por congregación
+router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
-        const item = await db_1.default.inventarioItem.findUnique({
-            where: { id_item: id },
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const item = await db_1.default.inventarioItem.findFirst({
+            where: {
+                id_item: id,
+                ...congregacionFilter
+            },
             include: {
                 congregacion: true,
                 estado: true,
@@ -62,11 +70,20 @@ router.get('/:id', async (req, res) => {
     }
 });
 // Create item
-router.post('/', async (req, res) => {
+router.post('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'crear'), async (req, res) => {
     try {
         const { nombre, categoria, descripcion, codigo, cantidad, unidad_medida, valor_unitario, ubicacion, id_congregacion, id_estado } = req.body;
-        if (!nombre || !id_congregacion || !id_estado) {
+        if (!nombre || !id_estado) {
             return res.status(400).json({ error: 'Faltan campos requeridos' });
+        }
+        // Si no es admin, forzar la congregación del usuario
+        let congregacionId = id_congregacion;
+        const { nivel } = req.user || {};
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionId = req.user.id_congregacion;
+        }
+        if (!congregacionId) {
+            return res.status(400).json({ error: 'Debe especificar una congregación' });
         }
         const newItem = await db_1.default.inventarioItem.create({
             data: {
@@ -76,9 +93,9 @@ router.post('/', async (req, res) => {
                 codigo,
                 cantidad: cantidad || 1,
                 unidad_medida: unidad_medida || 'unidad',
-                valor_unitario,
+                valor_unitario: valor_unitario ? parseFloat(valor_unitario) : null,
                 ubicacion,
-                id_congregacion,
+                id_congregacion: congregacionId,
                 id_estado
             },
             include: {
@@ -94,16 +111,32 @@ router.post('/', async (req, res) => {
     }
 });
 // Update item
-router.put('/:id', async (req, res) => {
+router.put('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'actualizar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Verificar que el item pertenezca a la congregación del usuario
+        const existingItem = await db_1.default.inventarioItem.findFirst({
+            where: {
+                id_item: id,
+                ...congregacionFilter
+            }
+        });
+        if (!existingItem) {
+            return res.status(404).json({ error: 'Item no encontrado' });
+        }
         const updateData = { ...req.body };
         delete updateData.id_item;
         delete updateData.created_at;
         delete updateData.updated_at;
+        // Si no es admin, no permitir cambiar la congregación
+        const { nivel } = req.user || {};
+        if (nivel !== 'ADMIN' && updateData.id_congregacion) {
+            delete updateData.id_congregacion;
+        }
         const updatedItem = await db_1.default.inventarioItem.update({
             where: { id_item: id },
             data: updateData,
@@ -120,11 +153,22 @@ router.put('/:id', async (req, res) => {
     }
 });
 // Delete item
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'eliminar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Verificar que el item pertenezca a la congregación del usuario
+        const existingItem = await db_1.default.inventarioItem.findFirst({
+            where: {
+                id_item: id,
+                ...congregacionFilter
+            }
+        });
+        if (!existingItem) {
+            return res.status(404).json({ error: 'Item no encontrado' });
         }
         await db_1.default.inventarioItem.delete({
             where: { id_item: id }
@@ -137,10 +181,14 @@ router.delete('/:id', async (req, res) => {
     }
 });
 // ==================== MOVIMIENTOS ====================
-// Get movimientos
-router.get('/movimientos', async (req, res) => {
+// Get movimientos - filtrado por congregación
+router.get('/movimientos', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
     try {
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const movimientos = await db_1.default.movimientoInventario.findMany({
+            where: {
+                item: congregacionFilter
+            },
             include: {
                 item: true
             },
@@ -154,15 +202,19 @@ router.get('/movimientos', async (req, res) => {
     }
 });
 // Create movimiento
-router.post('/movimientos', async (req, res) => {
+router.post('/movimientos', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'crear'), async (req, res) => {
     try {
         const { id_item, tipo, cantidad, fecha, id_responsable, motivo } = req.body;
         if (!id_item || !tipo || !cantidad || !id_responsable) {
             return res.status(400).json({ error: 'Faltan campos requeridos' });
         }
-        // Get current item
-        const item = await db_1.default.inventarioItem.findUnique({
-            where: { id_item }
+        // Verificar que el item pertenezca a la congregación del usuario
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const item = await db_1.default.inventarioItem.findFirst({
+            where: {
+                id_item: parseInt(id_item),
+                ...congregacionFilter
+            }
         });
         if (!item) {
             return res.status(404).json({ error: 'Item no encontrado' });
@@ -174,20 +226,20 @@ router.post('/movimientos', async (req, res) => {
         if (nuevaCantidad < 0) {
             return res.status(400).json({ error: 'No hay suficiente stock' });
         }
-        const [newMovimiento, updatedItem] = await db_1.default.$transaction([
+        const [newMovimiento] = await db_1.default.$transaction([
             db_1.default.movimientoInventario.create({
                 data: {
-                    id_item,
+                    id_item: parseInt(id_item),
                     tipo,
                     cantidad,
                     fecha: fecha ? new Date(fecha) : new Date(),
-                    id_responsable,
+                    id_responsable: parseInt(id_responsable),
                     motivo
                 },
                 include: { item: true }
             }),
             db_1.default.inventarioItem.update({
-                where: { id_item },
+                where: { id_item: parseInt(id_item) },
                 data: { cantidad: nuevaCantidad }
             })
         ]);
@@ -200,14 +252,21 @@ router.post('/movimientos', async (req, res) => {
 });
 // ==================== METADATA ====================
 // Get metadata for inventory forms
-router.get('/meta', async (req, res) => {
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
     try {
+        let congregacionFilter = {};
+        const { nivel } = req.user || {};
+        // Si no es admin, solo puede ver su congregación
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionFilter = { id_congregacion: req.user.id_congregacion };
+        }
         const [estados, congregaciones] = await Promise.all([
             db_1.default.estado.findMany({
                 where: { entidad: 'INVENTARIO' },
                 orderBy: { nombre: 'asc' }
             }),
             db_1.default.congregacion.findMany({
+                where: congregacionFilter,
                 include: { estado: true },
                 orderBy: { nombre: 'asc' }
             })

@@ -6,6 +6,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
+const auth_1 = require("../middleware/auth");
+const permissions_1 = require("../middleware/permissions");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -13,13 +15,19 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Get all users
-router.get('/', async (req, res) => {
+// Get all users - SuperAdmin ve todos, Admin ve solo los de su congregación
+router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
+    const { nivel, id_congregacion } = req.user || {};
+    const where = nivel === 'SUPERADMIN'
+        ? {}
+        : { id_congregacion };
     try {
         const usuarios = await db_1.default.usuarioSistema.findMany({
+            where,
             include: {
                 rol: true,
                 estado: true,
+                congregacion: true,
                 miembro: true
             },
             orderBy: { username: 'asc' }
@@ -31,8 +39,8 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener usuarios' });
     }
 });
-// Get user by ID
-router.get('/:id', async (req, res) => {
+// Get user by ID - Solo admin puede ver cualquier usuario
+router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
@@ -43,6 +51,7 @@ router.get('/:id', async (req, res) => {
             include: {
                 rol: true,
                 estado: true,
+                congregacion: true,
                 miembro: true
             }
         });
@@ -56,10 +65,10 @@ router.get('/:id', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener usuario' });
     }
 });
-// Create user (admin only)
-router.post('/', async (req, res) => {
+// Create user - Solo admin
+router.post('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'crear'), async (req, res) => {
     try {
-        const { username, email, password, id_rol, id_estado, id_miembro } = req.body;
+        const { username, email, password, id_rol, id_estado, id_congregacion, id_miembro } = req.body;
         if (!username || !email || !password || !id_rol || !id_estado) {
             return res.status(400).json({ error: 'Faltan campos requeridos' });
         }
@@ -78,13 +87,15 @@ router.post('/', async (req, res) => {
                 username,
                 email,
                 password_hash: hashedPassword,
-                id_rol,
-                id_estado,
-                id_miembro: id_miembro || null
+                id_rol: parseInt(id_rol),
+                id_estado: parseInt(id_estado),
+                id_congregacion: id_congregacion ? parseInt(id_congregacion) : null,
+                id_miembro: id_miembro ? parseInt(id_miembro) : null
             },
             include: {
                 rol: true,
-                estado: true
+                estado: true,
+                congregacion: true
             }
         });
         res.status(201).json(newUsuario);
@@ -94,8 +105,8 @@ router.post('/', async (req, res) => {
         res.status(500).json({ error: 'Error al crear usuario' });
     }
 });
-// Update user
-router.put('/:id', async (req, res) => {
+// Update user - Solo admin
+router.put('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'actualizar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
@@ -106,12 +117,22 @@ router.put('/:id', async (req, res) => {
         if (password) {
             updateData.password_hash = await bcrypt_1.default.hash(password, 10);
         }
+        // Parse numeric fields
+        if (updateData.id_rol)
+            updateData.id_rol = parseInt(updateData.id_rol);
+        if (updateData.id_estado)
+            updateData.id_estado = parseInt(updateData.id_estado);
+        if (updateData.id_congregacion)
+            updateData.id_congregacion = parseInt(updateData.id_congregacion);
+        if (updateData.id_miembro)
+            updateData.id_miembro = parseInt(updateData.id_miembro);
         const updatedUsuario = await db_1.default.usuarioSistema.update({
             where: { id_usuario: id },
             data: updateData,
             include: {
                 rol: true,
-                estado: true
+                estado: true,
+                congregacion: true
             }
         });
         res.json(updatedUsuario);
@@ -121,12 +142,16 @@ router.put('/:id', async (req, res) => {
         res.status(500).json({ error: 'Error al actualizar usuario' });
     }
 });
-// Delete user
-router.delete('/:id', async (req, res) => {
+// Delete user - Solo admin
+router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'eliminar'), async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
+        }
+        // No permitir eliminar al propio usuario
+        if (id === req.user?.userId) {
+            return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
         }
         await db_1.default.usuarioSistema.delete({
             where: { id_usuario: id }
@@ -138,10 +163,10 @@ router.delete('/:id', async (req, res) => {
         res.status(500).json({ error: 'Error al eliminar usuario' });
     }
 });
-// Get metadata for user form
-router.get('/meta', async (req, res) => {
+// Get metadata for user form - Solo admin
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     try {
-        const [roles, estados, miembros] = await Promise.all([
+        const [roles, estados, miembros, congregaciones] = await Promise.all([
             db_1.default.rolSistema.findMany({
                 orderBy: { nombre: 'asc' }
             }),
@@ -152,9 +177,13 @@ router.get('/meta', async (req, res) => {
             db_1.default.miembro.findMany({
                 where: { id_estado: 1 },
                 orderBy: { nombres: 'asc' }
+            }),
+            db_1.default.congregacion.findMany({
+                include: { estado: true },
+                orderBy: { nombre: 'asc' }
             })
         ]);
-        res.json({ roles, estados, miembros });
+        res.json({ roles, estados, miembros, congregaciones });
     }
     catch (error) {
         console.error('Get metadata error:', error);

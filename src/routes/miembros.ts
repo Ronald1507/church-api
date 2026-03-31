@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
+import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
 
@@ -10,15 +12,18 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get all members
-router.get('/', async (req: Request, res: Response) => {
+// Get all members - filtrado por congregación
+router.get('/', authenticateToken, requirePermission('miembros', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
     const miembros = await prisma.miembro.findMany({
+      where: congregacionFilter,
       include: {
         estado: true,
         congregacion: true,
         tipoMiembro: true,
-        ministerio: true
+        ministry: true
       },
       orderBy: { apellidos: 'asc' }
     });
@@ -29,23 +34,28 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get member by ID
-router.get('/:id', async (req: Request, res: Response) => {
+// Get member by ID - filtrado por congregación
+router.get('/:id', authenticateToken, requirePermission('miembros', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const memberId = getId(req);
     if (memberId === null) {
       return res.status(400).json({ error: 'ID de miembro inválido' });
     }
     
-    const miembro = await prisma.miembro.findUnique({
-      where: { id_miembro: memberId },
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const miembro = await prisma.miembro.findFirst({
+      where: {
+        id_miembro: memberId,
+        ...congregacionFilter
+      },
       include: {
         estado: true,
         congregacion: true,
         tipoMiembro: true,
-        ministerio: true,
+        ministry: true,
         cargoMinisterials: {
-          include: { ministerio: true, estado: true }
+          include: { ministry: true, estado: true }
         },
         relacionesOrigen: {
           include: { miembroDestino: true, tipoRelacion: true }
@@ -81,7 +91,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // Create member
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authenticateToken, requirePermission('miembros', 'crear'), async (req: AuthRequest, res: Response) => {
   try {
     const {
       nombres,
@@ -100,8 +110,19 @@ router.post('/', async (req: Request, res: Response) => {
       id_tipo_miembro
     } = req.body;
 
-    if (!nombres || !apellidos || !id_estado || !id_congregacion || !id_tipo_miembro) {
+    if (!nombres || !apellidos || !id_estado || !id_tipo_miembro) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+
+    // Si no es admin, forzar la congregación del usuario
+    let congregacionId = id_congregacion;
+    const { nivel } = req.user || {};
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionId = req.user.id_congregacion;
+    }
+
+    if (!congregacionId) {
+      return res.status(400).json({ error: 'Debe especificar una congregación' });
     }
 
     const newMiembro = await prisma.miembro.create({
@@ -117,7 +138,7 @@ router.post('/', async (req: Request, res: Response) => {
         direccion,
         foto_url,
         id_estado,
-        id_congregacion,
+        id_congregacion: congregacionId,
         id_ministerio,
         id_tipo_miembro
       },
@@ -136,14 +157,28 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // Update member
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', authenticateToken, requirePermission('miembros', 'actualizar'), async (req: AuthRequest, res: Response) => {
   try {
     const memberId = getId(req);
     if (memberId === null) {
       return res.status(400).json({ error: 'ID de miembro inválido' });
     }
+
+    const congregacionFilter = getCongregacionFilter(req.user);
     
-    const updateData = req.body;
+    // Verificar que el miembro pertenezca a la congregación del usuario
+    const existingMiembro = await prisma.miembro.findFirst({
+      where: {
+        id_miembro: memberId,
+        ...congregacionFilter
+      }
+    });
+
+    if (!existingMiembro) {
+      return res.status(404).json({ error: 'Miembro no encontrado' });
+    }
+    
+    const updateData = { ...req.body };
 
     // Remove non-database fields
     delete updateData.id_miembro;
@@ -153,6 +188,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     // Convert fecha_nacimiento if present
     if (updateData.fecha_nacimiento) {
       updateData.fecha_nacimiento = new Date(updateData.fecha_nacimiento);
+    }
+
+    // Si no es admin, no permitir cambiar la congregación
+    const { nivel } = req.user || {};
+    if (nivel !== 'ADMIN' && updateData.id_congregacion) {
+      delete updateData.id_congregacion;
     }
 
     const updatedMiembro = await prisma.miembro.update({
@@ -173,11 +214,25 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // Delete member
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', authenticateToken, requirePermission('miembros', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const memberId = getId(req);
     if (memberId === null) {
       return res.status(400).json({ error: 'ID de miembro inválido' });
+    }
+
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    // Verificar que el miembro pertenezca a la congregación del usuario
+    const existingMiembro = await prisma.miembro.findFirst({
+      where: {
+        id_miembro: memberId,
+        ...congregacionFilter
+      }
+    });
+
+    if (!existingMiembro) {
+      return res.status(404).json({ error: 'Miembro no encontrado' });
     }
     
     await prisma.miembro.delete({
@@ -192,7 +247,7 @@ router.delete('/:id', async (req: Request, res: Response) => {
 });
 
 // Get member types
-router.get('/meta/tipos', async (req: Request, res: Response) => {
+router.get('/meta/tipos', authenticateToken, requirePermission('miembros', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const tipos = await prisma.tipoMiembro.findMany({
       orderBy: { nombre: 'asc' }
@@ -204,14 +259,24 @@ router.get('/meta/tipos', async (req: Request, res: Response) => {
 });
 
 // Get metadata for member form (estados, congregaciones, tipos)
-router.get('/meta', async (req: Request, res: Response) => {
+// Para no-admin, solo devuelve su congregación
+router.get('/meta', authenticateToken, requirePermission('miembros', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    let congregacionFilter = {};
+    const { nivel } = req.user || {};
+    
+    // Si no es admin, solo puede ver su congregación
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    }
+
     const [estados, congregaciones, tipos, ministerios] = await Promise.all([
       prisma.estado.findMany({
         where: { entidad: 'MIEMBRO' },
         orderBy: { nombre: 'asc' }
       }),
       prisma.congregacion.findMany({
+        where: congregacionFilter,
         include: { estado: true },
         orderBy: { nombre: 'asc' }
       }),
@@ -219,6 +284,7 @@ router.get('/meta', async (req: Request, res: Response) => {
         orderBy: { nombre: 'asc' }
       }),
       prisma.ministerio.findMany({
+        where: congregacionFilter,
         include: { estado: true },
         orderBy: { nombre: 'asc' }
       })

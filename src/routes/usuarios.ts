@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
 import bcrypt from 'bcrypt';
+import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
 
@@ -11,13 +13,21 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get all users
-router.get('/', async (req: Request, res: Response) => {
+// Get all users - SuperAdmin ve todos, Admin ve solo los de su congregación
+router.get('/', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+  const { nivel, id_congregacion } = req.user || {};
+
+  const where = nivel === 'SUPERADMIN'
+    ? {} 
+    : { id_congregacion };
+
   try {
     const usuarios = await prisma.usuarioSistema.findMany({
+      where,
       include: {
         rol: true,
         estado: true,
+        congregacion: true,
         miembro: true
       },
       orderBy: { username: 'asc' }
@@ -29,8 +39,9 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get user by ID
-router.get('/:id', async (req: Request, res: Response) => {
+// Get user by ID - Solo admin puede ver cualquier usuario
+router.get('/:id', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+
   try {
     const id = getId(req);
     if (id === null) {
@@ -42,6 +53,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       include: {
         rol: true,
         estado: true,
+        congregacion: true,
         miembro: true
       }
     });
@@ -57,10 +69,11 @@ router.get('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Create user (admin only)
-router.post('/', async (req: Request, res: Response) => {
+// Create user - Solo admin
+router.post('/', authenticateToken, requirePermission('usuarios', 'crear'), async (req: AuthRequest, res: Response) => {
+
   try {
-    const { username, email, password, id_rol, id_estado, id_miembro } = req.body;
+    const { username, email, password, id_rol, id_estado, id_congregacion, id_miembro } = req.body;
 
     if (!username || !email || !password || !id_rol || !id_estado) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
@@ -84,13 +97,15 @@ router.post('/', async (req: Request, res: Response) => {
         username,
         email,
         password_hash: hashedPassword,
-        id_rol,
-        id_estado,
-        id_miembro: id_miembro || null
+        id_rol: parseInt(id_rol),
+        id_estado: parseInt(id_estado),
+        id_congregacion: id_congregacion ? parseInt(id_congregacion) : null,
+        id_miembro: id_miembro ? parseInt(id_miembro) : null
       },
       include: {
         rol: true,
-        estado: true
+        estado: true,
+        congregacion: true
       }
     });
 
@@ -101,8 +116,9 @@ router.post('/', async (req: Request, res: Response) => {
   }
 });
 
-// Update user
-router.put('/:id', async (req: Request, res: Response) => {
+// Update user - Solo admin
+router.put('/:id', authenticateToken, requirePermission('usuarios', 'actualizar'), async (req: AuthRequest, res: Response) => {
+
   try {
     const id = getId(req);
     if (id === null) {
@@ -116,12 +132,19 @@ router.put('/:id', async (req: Request, res: Response) => {
       updateData.password_hash = await bcrypt.hash(password, 10);
     }
 
+    // Parse numeric fields
+    if (updateData.id_rol) updateData.id_rol = parseInt(updateData.id_rol);
+    if (updateData.id_estado) updateData.id_estado = parseInt(updateData.id_estado);
+    if (updateData.id_congregacion) updateData.id_congregacion = parseInt(updateData.id_congregacion);
+    if (updateData.id_miembro) updateData.id_miembro = parseInt(updateData.id_miembro);
+
     const updatedUsuario = await prisma.usuarioSistema.update({
       where: { id_usuario: id },
       data: updateData,
       include: {
         rol: true,
-        estado: true
+        estado: true,
+        congregacion: true
       }
     });
 
@@ -132,12 +155,18 @@ router.put('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Delete user
-router.delete('/:id', async (req: Request, res: Response) => {
+// Delete user - Solo admin
+router.delete('/:id', authenticateToken, requirePermission('usuarios', 'eliminar'), async (req: AuthRequest, res: Response) => {
+
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+    
+    // No permitir eliminar al propio usuario
+    if (id === req.user?.userId) {
+      return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
     }
     
     await prisma.usuarioSistema.delete({
@@ -151,10 +180,11 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
-// Get metadata for user form
-router.get('/meta', async (req: Request, res: Response) => {
+// Get metadata for user form - Solo admin
+router.get('/meta', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+
   try {
-    const [roles, estados, miembros] = await Promise.all([
+    const [roles, estados, miembros, congregaciones] = await Promise.all([
       prisma.rolSistema.findMany({
         orderBy: { nombre: 'asc' }
       }),
@@ -165,9 +195,13 @@ router.get('/meta', async (req: Request, res: Response) => {
       prisma.miembro.findMany({
         where: { id_estado: 1 },
         orderBy: { nombres: 'asc' }
+      }),
+      prisma.congregacion.findMany({
+        include: { estado: true },
+        orderBy: { nombre: 'asc' }
       })
     ]);
-    res.json({ roles, estados, miembros });
+    res.json({ roles, estados, miembros, congregaciones });
   } catch (error) {
     console.error('Get metadata error:', error);
     res.status(500).json({ error: 'Error al obtener metadatos' });

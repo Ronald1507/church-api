@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
+import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
 
@@ -12,10 +14,13 @@ const getId = (req: Request): number | null => {
 
 // ==================== ITEMS ====================
 
-// Get all items
-router.get('/', async (req: Request, res: Response) => {
+// Get all items - filtrado por congregación
+router.get('/', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
     const items = await prisma.inventarioItem.findMany({
+      where: congregacionFilter,
       include: {
         congregacion: true,
         estado: true
@@ -29,16 +34,21 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get item by ID
-router.get('/:id', async (req: Request, res: Response) => {
+// Get item by ID - filtrado por congregación
+router.get('/:id', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
     }
     
-    const item = await prisma.inventarioItem.findUnique({
-      where: { id_item: id },
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const item = await prisma.inventarioItem.findFirst({
+      where: {
+        id_item: id,
+        ...congregacionFilter
+      },
       include: {
         congregacion: true,
         estado: true,
@@ -64,12 +74,23 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // Create item
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authenticateToken, requirePermission('inventario', 'crear'), async (req: AuthRequest, res: Response) => {
   try {
     const { nombre, categoria, descripcion, codigo, cantidad, unidad_medida, valor_unitario, ubicacion, id_congregacion, id_estado } = req.body;
 
-    if (!nombre || !id_congregacion || !id_estado) {
+    if (!nombre || !id_estado) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+
+    // Si no es admin, forzar la congregación del usuario
+    let congregacionId = id_congregacion;
+    const { nivel } = req.user || {};
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionId = req.user.id_congregacion;
+    }
+
+    if (!congregacionId) {
+      return res.status(400).json({ error: 'Debe especificar una congregación' });
     }
 
     const newItem = await prisma.inventarioItem.create({
@@ -80,9 +101,9 @@ router.post('/', async (req: Request, res: Response) => {
         codigo,
         cantidad: cantidad || 1,
         unidad_medida: unidad_medida || 'unidad',
-        valor_unitario,
+        valor_unitario: valor_unitario ? parseFloat(valor_unitario) : null,
         ubicacion,
-        id_congregacion,
+        id_congregacion: congregacionId,
         id_estado
       },
       include: {
@@ -99,17 +120,37 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // Update item
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', authenticateToken, requirePermission('inventario', 'actualizar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    // Verificar que el item pertenezca a la congregación del usuario
+    const existingItem = await prisma.inventarioItem.findFirst({
+      where: {
+        id_item: id,
+        ...congregacionFilter
+      }
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({ error: 'Item no encontrado' });
     }
     
     const updateData = { ...req.body };
     delete updateData.id_item;
     delete updateData.created_at;
     delete updateData.updated_at;
+
+    // Si no es admin, no permitir cambiar la congregación
+    const { nivel } = req.user || {};
+    if (nivel !== 'ADMIN' && updateData.id_congregacion) {
+      delete updateData.id_congregacion;
+    }
 
     const updatedItem = await prisma.inventarioItem.update({
       where: { id_item: id },
@@ -128,11 +169,25 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // Delete item
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', authenticateToken, requirePermission('inventario', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    // Verificar que el item pertenezca a la congregación del usuario
+    const existingItem = await prisma.inventarioItem.findFirst({
+      where: {
+        id_item: id,
+        ...congregacionFilter
+      }
+    });
+
+    if (!existingItem) {
+      return res.status(404).json({ error: 'Item no encontrado' });
     }
     
     await prisma.inventarioItem.delete({
@@ -148,10 +203,15 @@ router.delete('/:id', async (req: Request, res: Response) => {
 
 // ==================== MOVIMIENTOS ====================
 
-// Get movimientos
-router.get('/movimientos', async (req: Request, res: Response) => {
+// Get movimientos - filtrado por congregación
+router.get('/movimientos', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
     const movimientos = await prisma.movimientoInventario.findMany({
+      where: {
+        item: congregacionFilter
+      },
       include: {
         item: true
       },
@@ -165,7 +225,7 @@ router.get('/movimientos', async (req: Request, res: Response) => {
 });
 
 // Create movimiento
-router.post('/movimientos', async (req: Request, res: Response) => {
+router.post('/movimientos', authenticateToken, requirePermission('inventario', 'crear'), async (req: AuthRequest, res: Response) => {
   try {
     const { id_item, tipo, cantidad, fecha, id_responsable, motivo } = req.body;
 
@@ -173,9 +233,13 @@ router.post('/movimientos', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
-    // Get current item
-    const item = await prisma.inventarioItem.findUnique({
-      where: { id_item }
+    // Verificar que el item pertenezca a la congregación del usuario
+    const congregacionFilter = getCongregacionFilter(req.user);
+    const item = await prisma.inventarioItem.findFirst({
+      where: {
+        id_item: parseInt(id_item),
+        ...congregacionFilter
+      }
     });
 
     if (!item) {
@@ -191,20 +255,20 @@ router.post('/movimientos', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'No hay suficiente stock' });
     }
 
-    const [newMovimiento, updatedItem] = await prisma.$transaction([
+    const [newMovimiento] = await prisma.$transaction([
       prisma.movimientoInventario.create({
         data: {
-          id_item,
+          id_item: parseInt(id_item),
           tipo,
           cantidad,
           fecha: fecha ? new Date(fecha) : new Date(),
-          id_responsable,
+          id_responsable: parseInt(id_responsable),
           motivo
         },
         include: { item: true }
       }),
       prisma.inventarioItem.update({
-        where: { id_item },
+        where: { id_item: parseInt(id_item) },
         data: { cantidad: nuevaCantidad }
       })
     ]);
@@ -219,14 +283,23 @@ router.post('/movimientos', async (req: Request, res: Response) => {
 // ==================== METADATA ====================
 
 // Get metadata for inventory forms
-router.get('/meta', async (req: Request, res: Response) => {
+router.get('/meta', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    let congregacionFilter = {};
+    const { nivel } = req.user || {};
+    
+    // Si no es admin, solo puede ver su congregación
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    }
+
     const [estados, congregaciones] = await Promise.all([
       prisma.estado.findMany({
         where: { entidad: 'INVENTARIO' },
         orderBy: { nombre: 'asc' }
       }),
       prisma.congregacion.findMany({
+        where: congregacionFilter,
         include: { estado: true },
         orderBy: { nombre: 'asc' }
       })

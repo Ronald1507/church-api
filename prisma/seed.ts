@@ -1,99 +1,139 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, NivelAcceso } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import pg from 'pg';
 import bcrypt from 'bcrypt';
 import 'dotenv/config';
 
+const { Pool } = pg;
+
+const RECURSOS = [
+  'miembros',
+  'ministerios',
+  'finanzas',
+  'eventos',
+  'inventario',
+  'comunicaciones',
+  'usuarios',
+  'configuracion',
+  'reportes'
+];
+
+const ACCIONES = ['crear', 'leer', 'actualizar', 'eliminar', 'admin'];
+
 async function main() {
-  const prisma = new PrismaClient();
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL
+  });
+
+  const adapter = new PrismaPg(pool as any);
+  const prisma = new PrismaClient({ adapter } as any);
 
   try {
-    console.log('Seeding database...');
+    console.log('Seeding RBAC...');
 
-    // Create Estados
-    const estados = await Promise.all([
-      prisma.estado.create({
-        data: { entidad: 'USUARIO', codigo: 'ACTIVO', nombre: 'Activo', descripcion: 'Usuario activo en el sistema', es_estado_final: false }
-      }),
-      prisma.estado.create({
-        data: { entidad: 'USUARIO', codigo: 'INACTIVO', nombre: 'Inactivo', descripcion: 'Usuario inactivo', es_estado_final: false }
-      }),
-      prisma.estado.create({
-        data: { entidad: 'MIEMBRO', codigo: 'ACTIVO', nombre: 'Miembro activo', descripcion: 'Miembro activo en la iglesia', es_estado_final: false }
-      }),
-      prisma.estado.create({
-        data: { entidad: 'MIEMBRO', codigo: 'INACTIVO', nombre: 'Miembro inactivo', descripcion: 'Miembro inactivo', es_estado_final: false }
-      }),
-      prisma.estado.create({
-        data: { entidad: 'MIEMBRO', codigo: 'TRANSFERIDO', nombre: 'Transferido', descripcion: 'Miembro transferido a otra iglesia', es_estado_final: true }
-      }),
-      prisma.estado.create({
-        data: { entidad: 'MINISTERIO', codigo: 'ACTIVO', nombre: 'Ministerio activo', descripcion: 'Ministerio activo', es_estado_final: false }
-      }),
-      prisma.estado.create({
-        data: { entidad: 'CONGREGACION', codigo: 'ACTIVA', nombre: 'Congregación activa', descripcion: 'Congregación activa', es_estado_final: false }
-      }),
-    ]);
+    const recursosSet = new Set(RECURSOS);
+    const accionesSet = new Set(ACCIONES);
 
-    console.log(`Created ${estados.length} estados`);
-
-    // Create Roles
-    const roles = await Promise.all([
-      prisma.rolSistema.create({
-        data: { nombre: 'ADMIN', descripcion: 'Administrador del sistema', permisos: { all: true } }
-      }),
-      prisma.rolSistema.create({
-        data: { nombre: 'PASTOR', descripcion: 'Pastor principal', permisos: { members: true, ministries: true, finances: true } }
-      }),
-      prisma.rolSistema.create({
-        data: { nombre: 'USUARIO', descripcion: 'Usuario regular', permisos: { members: 'read' } }
-      }),
-    ]);
-
-    console.log(`Created ${roles.length} roles`);
-
-    // Create usuario admin inicial
-    const hashedPassword = await bcrypt.hash('admin123', 10);
-    const adminUser = await prisma.usuarioSistema.create({
-      data: {
-        username: 'admin',
-        email: 'admin@iglesia.cl',
-        password_hash: hashedPassword,
-        id_rol: roles[0].id_rol, // ADMIN
-        id_estado: estados[0].id_estado // ACTIVO
+    for (const recurso of recursosSet) {
+      for (const accion of accionesSet) {
+        try {
+          const existing = await prisma.permiso.findFirst({ where: { recurso, accion } });
+          if (!existing) {
+            await prisma.permiso.create({
+              data: { recurso, accion, descripcion: `${accion} sobre ${recurso}` }
+            });
+          }
+        } catch {}
       }
-    });
-    console.log(`Created admin user: ${adminUser.username} (password: admin123)`);
+    }
+    console.log(`Created ${RECURSOS.length * ACCIONES.length} permisos`);
 
-    // Create TipoMiembro
-    const tipos = await Promise.all([
-      prisma.tipoMiembro.create({
-        data: { nombre: 'MIEMBRO', descripcion: 'Miembro regular de la iglesia' }
-      }),
-      prisma.tipoMiembro.create({
-        data: { nombre: 'VISITANTE', descripcion: 'Visitante frecuente' }
-      }),
-      prisma.tipoMiembro.create({
-        data: { nombre: 'DISCIPULO', descripcion: 'En proceso de discipulado' }
-      }),
-    ]);
-
-    console.log(`Created ${tipos.length} tipos de miembro`);
-
-    // Create Congregacion
-    const congregacion = await prisma.congregacion.create({
-      data: {
-        nombre: 'Iglesia Central',
-        direccion: 'Av. Principal 123',
-        ciudad: 'Santiago',
-        region: 'Metropolitana',
-        id_estado: estados[6].id_estado // Congregación activa
-      }
+    const rolSuperadmin = await prisma.rolSistema.upsert({
+      where: { nombre: 'SUPERADMIN' },
+      update: { nivel: NivelAcceso.SUPERADMIN },
+      create: { nombre: 'SUPERADMIN', descripcion: 'Super Administrador del sistema', nivel: NivelAcceso.SUPERADMIN }
     });
 
-    console.log('Created congregación:', congregacion.nombre);
+    const rolAdmin = await prisma.rolSistema.upsert({
+      where: { nombre: 'ADMIN' },
+      update: { nivel: NivelAcceso.ADMIN },
+      create: { nombre: 'ADMIN', descripcion: 'Administrador de congregación', nivel: NivelAcceso.ADMIN }
+    });
 
-    console.log('\n✅ Database seeded successfully!');
+    const rolUsuario = await prisma.rolSistema.upsert({
+      where: { nombre: 'USUARIO' },
+      update: { nivel: NivelAcceso.USUARIO },
+      create: { nombre: 'USUARIO', descripcion: 'Usuario regular', nivel: NivelAcceso.USUARIO }
+    });
+
+    console.log('Created roles: SUPERADMIN, ADMIN, USUARIO');
+
+    const adminPermisos = [
+      ...ACCIONES.map(a => ({ recurso: 'miembros', accion: a })),
+      ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'ministerios', accion: a })),
+      ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'finanzas', accion: a })),
+      ...ACCIONES.map(a => ({ recurso: 'eventos', accion: a })),
+      ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'inventario', accion: a })),
+      ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'comunicaciones', accion: a })),
+      ...['leer', 'admin'].map(a => ({ recurso: 'reportes', accion: a }))
+    ];
+
+    const usuarioPermisos = [
+      { recurso: 'miembros', accion: 'leer' },
+      { recurso: 'eventos', accion: 'leer' },
+      { recurso: 'finanzas', accion: 'leer' },
+      { recurso: 'reportes', accion: 'leer' }
+    ];
+
+    const allPermisos = await prisma.permiso.findMany();
+
+    for (const p of allPermisos) {
+      try {
+        await prisma.rolPermiso.create({
+          data: { id_rol: rolSuperadmin.id_rol, id_permiso: p.id_permiso }
+        });
+      } catch {}
+    }
+    console.log('Asignados todos los permisos a SUPERADMIN');
+
+    for (const p of adminPermisos) {
+      const permiso = allPermisos.find((x: any) => x.recurso === p.recurso && x.accion === p.accion);
+      if (permiso) {
+        try {
+          await prisma.rolPermiso.create({
+            data: { id_rol: rolAdmin.id_rol, id_permiso: permiso.id_permiso }
+          });
+        } catch {}
+      }
+    }
+    console.log('Asignados permisos a ADMIN');
+
+    for (const p of usuarioPermisos) {
+      const permiso = allPermisos.find((x: any) => x.recurso === p.recurso && x.accion === p.accion);
+      if (permiso) {
+        try {
+          await prisma.rolPermiso.create({
+            data: { id_rol: rolUsuario.id_rol, id_permiso: permiso.id_permiso }
+          });
+        } catch {}
+      }
+    }
+    console.log('Asignados permisos a USUARIO');
+
+    const existingUsers = await prisma.usuarioSistema.findMany({ include: { rol: true } });
+    if (existingUsers.length > 0) {
+      for (const user of existingUsers) {
+        await prisma.usuarioSistema.update({
+          where: { id_usuario: user.id_usuario },
+          data: { nivel: user.rol.nivel }
+        });
+      }
+      console.log(`Actualizado nivel en ${existingUsers.length} usuarios existentes`);
+    }
+
+    console.log('\n✅ RBAC seeded successfully!');
   } catch (error) {
-    console.error('Error seeding database:', error);
+    console.error('Error seeding RBAC:', error);
   } finally {
     await prisma.$disconnect();
   }

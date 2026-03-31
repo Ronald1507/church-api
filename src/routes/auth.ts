@@ -25,7 +25,7 @@ router.post('/login', async (req: Request, res: Response) => {
           { username: loginIdentifier }
         ]
       },
-      include: { rol: true, estado: true }
+      include: { rol: true, estado: true, congregacion: true }
     });
 
     if (!user) {
@@ -47,7 +47,8 @@ router.post('/login', async (req: Request, res: Response) => {
       { 
         userId: user.id_usuario, 
         username: user.username, 
-        role: user.rol.nombre 
+        nivel: user.nivel || 'USUARIO',
+        id_congregacion: user.id_congregacion
       },
       process.env.JWT_SECRET || 'secret',
       { expiresIn: process.env.JWT_EXPIRES_IN || '15m' } as jwt.SignOptions
@@ -66,7 +67,8 @@ router.post('/login', async (req: Request, res: Response) => {
         id: user.id_usuario,
         username: user.username,
         email: user.email,
-        role: user.rol.nombre
+        nivel: user.nivel || 'USUARIO',
+        id_congregacion: user.id_congregacion
       }
     });
   } catch (error) {
@@ -185,7 +187,8 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => 
       where: { id_usuario: userId },
       include: { 
         rol: true,
-        estado: true
+        estado: true,
+        congregacion: true
       }
     });
 
@@ -198,6 +201,8 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => 
       username: user.username,
       email: user.email,
       role: user.rol.nombre,
+      id_congregacion: user.id_congregacion,
+      congregacion: user.congregacion,
       estado: user.estado.nombre
     });
   } catch (error) {

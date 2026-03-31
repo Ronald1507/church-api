@@ -5,6 +5,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
+const auth_1 = require("../middleware/auth");
+const permissions_1 = require("../middleware/permissions");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -12,15 +14,17 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Get all members
-router.get('/', async (req, res) => {
+// Get all members - filtrado por congregación
+router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('miembros', 'leer'), async (req, res) => {
     try {
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const miembros = await db_1.default.miembro.findMany({
+            where: congregacionFilter,
             include: {
                 estado: true,
                 congregacion: true,
                 tipoMiembro: true,
-                ministerio: true
+                ministry: true
             },
             orderBy: { apellidos: 'asc' }
         });
@@ -31,22 +35,26 @@ router.get('/', async (req, res) => {
         res.status(500).json({ error: 'Error al obtener miembros' });
     }
 });
-// Get member by ID
-router.get('/:id', async (req, res) => {
+// Get member by ID - filtrado por congregación
+router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('miembros', 'leer'), async (req, res) => {
     try {
         const memberId = getId(req);
         if (memberId === null) {
             return res.status(400).json({ error: 'ID de miembro inválido' });
         }
-        const miembro = await db_1.default.miembro.findUnique({
-            where: { id_miembro: memberId },
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const miembro = await db_1.default.miembro.findFirst({
+            where: {
+                id_miembro: memberId,
+                ...congregacionFilter
+            },
             include: {
                 estado: true,
                 congregacion: true,
                 tipoMiembro: true,
-                ministerio: true,
+                ministry: true,
                 cargoMinisterials: {
-                    include: { ministerio: true, estado: true }
+                    include: { ministry: true, estado: true }
                 },
                 relacionesOrigen: {
                     include: { miembroDestino: true, tipoRelacion: true }
@@ -80,11 +88,20 @@ router.get('/:id', async (req, res) => {
     }
 });
 // Create member
-router.post('/', async (req, res) => {
+router.post('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('miembros', 'crear'), async (req, res) => {
     try {
         const { nombres, apellidos, fecha_nacimiento, genero, estado_civil, rut, telefono, email, direccion, foto_url, id_estado, id_congregacion, id_ministerio, id_tipo_miembro } = req.body;
-        if (!nombres || !apellidos || !id_estado || !id_congregacion || !id_tipo_miembro) {
+        if (!nombres || !apellidos || !id_estado || !id_tipo_miembro) {
             return res.status(400).json({ error: 'Faltan campos requeridos' });
+        }
+        // Si no es admin, forzar la congregación del usuario
+        let congregacionId = id_congregacion;
+        const { nivel } = req.user || {};
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionId = req.user.id_congregacion;
+        }
+        if (!congregacionId) {
+            return res.status(400).json({ error: 'Debe especificar una congregación' });
         }
         const newMiembro = await db_1.default.miembro.create({
             data: {
@@ -99,7 +116,7 @@ router.post('/', async (req, res) => {
                 direccion,
                 foto_url,
                 id_estado,
-                id_congregacion,
+                id_congregacion: congregacionId,
                 id_ministerio,
                 id_tipo_miembro
             },
@@ -117,13 +134,24 @@ router.post('/', async (req, res) => {
     }
 });
 // Update member
-router.put('/:id', async (req, res) => {
+router.put('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('miembros', 'actualizar'), async (req, res) => {
     try {
         const memberId = getId(req);
         if (memberId === null) {
             return res.status(400).json({ error: 'ID de miembro inválido' });
         }
-        const updateData = req.body;
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Verificar que el miembro pertenezca a la congregación del usuario
+        const existingMiembro = await db_1.default.miembro.findFirst({
+            where: {
+                id_miembro: memberId,
+                ...congregacionFilter
+            }
+        });
+        if (!existingMiembro) {
+            return res.status(404).json({ error: 'Miembro no encontrado' });
+        }
+        const updateData = { ...req.body };
         // Remove non-database fields
         delete updateData.id_miembro;
         delete updateData.created_at;
@@ -131,6 +159,11 @@ router.put('/:id', async (req, res) => {
         // Convert fecha_nacimiento if present
         if (updateData.fecha_nacimiento) {
             updateData.fecha_nacimiento = new Date(updateData.fecha_nacimiento);
+        }
+        // Si no es admin, no permitir cambiar la congregación
+        const { nivel } = req.user || {};
+        if (nivel !== 'ADMIN' && updateData.id_congregacion) {
+            delete updateData.id_congregacion;
         }
         const updatedMiembro = await db_1.default.miembro.update({
             where: { id_miembro: memberId },
@@ -149,11 +182,22 @@ router.put('/:id', async (req, res) => {
     }
 });
 // Delete member
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('miembros', 'eliminar'), async (req, res) => {
     try {
         const memberId = getId(req);
         if (memberId === null) {
             return res.status(400).json({ error: 'ID de miembro inválido' });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        // Verificar que el miembro pertenezca a la congregación del usuario
+        const existingMiembro = await db_1.default.miembro.findFirst({
+            where: {
+                id_miembro: memberId,
+                ...congregacionFilter
+            }
+        });
+        if (!existingMiembro) {
+            return res.status(404).json({ error: 'Miembro no encontrado' });
         }
         await db_1.default.miembro.delete({
             where: { id_miembro: memberId }
@@ -166,7 +210,7 @@ router.delete('/:id', async (req, res) => {
     }
 });
 // Get member types
-router.get('/meta/tipos', async (req, res) => {
+router.get('/meta/tipos', auth_1.authenticateToken, (0, permissions_1.requirePermission)('miembros', 'leer'), async (req, res) => {
     try {
         const tipos = await db_1.default.tipoMiembro.findMany({
             orderBy: { nombre: 'asc' }
@@ -178,14 +222,22 @@ router.get('/meta/tipos', async (req, res) => {
     }
 });
 // Get metadata for member form (estados, congregaciones, tipos)
-router.get('/meta', async (req, res) => {
+// Para no-admin, solo devuelve su congregación
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('miembros', 'leer'), async (req, res) => {
     try {
+        let congregacionFilter = {};
+        const { nivel } = req.user || {};
+        // Si no es admin, solo puede ver su congregación
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionFilter = { id_congregacion: req.user.id_congregacion };
+        }
         const [estados, congregaciones, tipos, ministerios] = await Promise.all([
             db_1.default.estado.findMany({
                 where: { entidad: 'MIEMBRO' },
                 orderBy: { nombre: 'asc' }
             }),
             db_1.default.congregacion.findMany({
+                where: congregacionFilter,
                 include: { estado: true },
                 orderBy: { nombre: 'asc' }
             }),
@@ -193,6 +245,7 @@ router.get('/meta', async (req, res) => {
                 orderBy: { nombre: 'asc' }
             }),
             db_1.default.ministerio.findMany({
+                where: congregacionFilter,
                 include: { estado: true },
                 orderBy: { nombre: 'asc' }
             })

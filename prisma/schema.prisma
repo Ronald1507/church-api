@@ -9,6 +9,15 @@ datasource db {
 }
 
 // =============================================================
+// 0. ENUMS
+// =============================================================
+enum NivelAcceso {
+  USUARIO
+  ADMIN
+  SUPERADMIN
+}
+
+// =============================================================
 // 1. SISTEMA DE ESTADOS CENTRALIZADO
 // =============================================================
 model Estado {
@@ -45,37 +54,69 @@ model Estado {
 }
 
 // =============================================================
+// 0. PERMISOS RBAC
+// =============================================================
+model Permiso {
+  id_permiso    Int          @id @default(autoincrement())
+  recurso       String       @unique @map("recurso") @db.VarChar(40)
+  accion        String       @map("accion") @db.VarChar(20)
+  descripcion  String?      @map("descripcion") @db.VarChar(100)
+  created_at    DateTime     @default(now()) @map("created_at") @db.Timestamptz
+  
+  roles         RolPermiso[]
+  
+  @@unique([recurso, accion])
+  @@map("permiso")
+}
+
+model RolPermiso {
+  id_rol     Int        @map("id_rol")
+  id_permiso Int        @map("id_permiso")
+  
+  rol        RolSistema @relation(fields: [id_rol], references: [id_rol])
+  permiso    Permiso    @relation(fields: [id_permiso], references: [id_permiso])
+  
+  @@id([id_rol, id_permiso])
+  @@map("rol_permiso")
+}
+
+// =============================================================
 // 2. MÓDULO SISTEMA: ROLES Y USUARIOS
 // =============================================================
 model RolSistema {
-  id_rol      Int              @id @default(autoincrement())
-  nombre      String           @unique @map("nombre") @db.VarChar(60)
-  descripcion String?          @map("descripcion") @db.Text
-  permisos    Json             @default("{}") @map("permisos")
-  created_at  DateTime         @default(now()) @map("created_at") @db.Timestamptz
-  updated_at  DateTime         @default(now()) @map("updated_at") @db.Timestamptz
+  id_rol      Int         @id @default(autoincrement())
+  nombre      String      @unique @map("nombre") @db.VarChar(60)
+  descripcion String?     @map("descripcion") @db.Text
+  nivel       NivelAcceso @default(USUARIO) @map("nivel")
+  created_at  DateTime    @default(now()) @map("created_at") @db.Timestamptz
+  updated_at  DateTime    @default(now()) @map("updated_at") @db.Timestamptz
   usuarios    UsuarioSistema[]
+  permisos    RolPermiso[]
 
   @@map("rol_sistema")
 }
 
 model UsuarioSistema {
-  id_usuario    Int       @id @default(autoincrement())
-  username      String    @unique @map("username") @db.VarChar(60)
-  password_hash String    @map("password_hash") @db.VarChar(255)
-  email         String    @unique @map("email") @db.VarChar(120)
-  id_rol        Int       @map("id_rol")
-  id_estado     Int       @map("id_estado")
-  ultimo_acceso DateTime? @map("ultimo_acceso") @db.Timestamptz
-  id_miembro    Int?      @map("id_miembro")
-  created_at    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updated_at    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+  id_usuario       Int        @id @default(autoincrement())
+  username         String     @unique @map("username") @db.VarChar(60)
+  password_hash    String     @map("password_hash") @db.VarChar(255)
+  email            String     @unique @map("email") @db.VarChar(120)
+  id_rol           Int        @map("id_rol")
+  id_estado        Int        @map("id_estado")
+  id_congregacion  Int?       @map("id_congregacion")
+  nivel            NivelAcceso @default(USUARIO) @map("nivel")
+  ultimo_acceso    DateTime?  @map("ultimo_acceso") @db.Timestamptz
+  id_miembro       Int?       @map("id_miembro")
+  created_at       DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updated_at       DateTime   @default(now()) @map("updated_at") @db.Timestamptz
 
-  rol    RolSistema @relation(fields: [id_rol], references: [id_rol])
-  estado Estado     @relation(fields: [id_estado], references: [id_estado])
+  rol           RolSistema    @relation(fields: [id_rol], references: [id_rol])
+  estado        Estado        @relation(fields: [id_estado], references: [id_estado])
+  congregacion  Congregacion? @relation(fields: [id_congregacion], references: [id_congregacion])
 
   @@index([id_rol])
   @@index([id_estado])
+  @@index([id_congregacion])
   @@map("usuario_sistema")
 }
 
@@ -117,6 +158,7 @@ model Congregacion {
   inventarioItems InventarioItem[]
   presupuestos    Presupuesto[]
   comunicaciones  Comunicacion[]
+  usuarios        UsuarioSistema[]
 
   @@map("congregacion")
 }

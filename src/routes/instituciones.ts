@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
+import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
+import { requirePermission } from '../middleware/permissions';
 
 const router = Router();
 
@@ -10,10 +12,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get all instituciones
-router.get('/', async (req: Request, res: Response) => {
+// Get all instituciones - filtrado por congregación
+router.get('/', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
     const instituciones = await prisma.institucion.findMany({
+      where: congregacionFilter,
       include: {
         congregacion: true,
         estado: true
@@ -27,16 +32,21 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// Get institucion by ID
-router.get('/:id', async (req: Request, res: Response) => {
+// Get institucion by ID - filtrado por congregación
+router.get('/:id', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
     }
     
-    const institucion = await prisma.institucion.findUnique({
-      where: { id_institucion: id },
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const institucion = await prisma.institucion.findFirst({
+      where: {
+        id_institucion: id,
+        ...congregacionFilter
+      },
       include: {
         congregacion: true,
         estado: true,
@@ -58,12 +68,23 @@ router.get('/:id', async (req: Request, res: Response) => {
 });
 
 // Create institucion
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', authenticateToken, requirePermission('instituciones', 'crear'), async (req: AuthRequest, res: Response) => {
   try {
     const { nombre, tipo, descripcion, id_congregacion, id_estado } = req.body;
 
-    if (!nombre || !id_congregacion || !id_estado) {
+    if (!nombre || !id_estado) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
+    }
+
+    // Si no es admin, forzar la congregación del usuario
+    let congregacionId = id_congregacion;
+    const { nivel } = req.user || {};
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionId = req.user.id_congregacion;
+    }
+
+    if (!congregacionId) {
+      return res.status(400).json({ error: 'Debe especificar una congregación' });
     }
 
     const newInstitucion = await prisma.institucion.create({
@@ -71,7 +92,7 @@ router.post('/', async (req: Request, res: Response) => {
         nombre,
         tipo,
         descripcion,
-        id_congregacion,
+        id_congregacion: congregacionId,
         id_estado
       },
       include: {
@@ -88,17 +109,37 @@ router.post('/', async (req: Request, res: Response) => {
 });
 
 // Update institucion
-router.put('/:id', async (req: Request, res: Response) => {
+router.put('/:id', authenticateToken, requirePermission('instituciones', 'actualizar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    // Verificar que la institucion pertenezca a la congregación del usuario
+    const existingInstitucion = await prisma.institucion.findFirst({
+      where: {
+        id_institucion: id,
+        ...congregacionFilter
+      }
+    });
+
+    if (!existingInstitucion) {
+      return res.status(404).json({ error: 'Institución no encontrada' });
     }
     
     const updateData = { ...req.body };
     delete updateData.id_institucion;
     delete updateData.created_at;
     delete updateData.updated_at;
+
+    // Si no es admin, no permitir cambiar la congregación
+    const { nivel } = req.user || {};
+    if (nivel !== 'ADMIN' && updateData.id_congregacion) {
+      delete updateData.id_congregacion;
+    }
 
     const updatedInstitucion = await prisma.institucion.update({
       where: { id_institucion: id },
@@ -117,11 +158,25 @@ router.put('/:id', async (req: Request, res: Response) => {
 });
 
 // Delete institucion
-router.delete('/:id', async (req: Request, res: Response) => {
+router.delete('/:id', authenticateToken, requirePermission('instituciones', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     if (id === null) {
       return res.status(400).json({ error: 'ID inválido' });
+    }
+
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    // Verificar que la institucion pertenezca a la congregación del usuario
+    const existingInstitucion = await prisma.institucion.findFirst({
+      where: {
+        id_institucion: id,
+        ...congregacionFilter
+      }
+    });
+
+    if (!existingInstitucion) {
+      return res.status(404).json({ error: 'Institución no encontrada' });
     }
     
     await prisma.institucion.delete({
@@ -136,14 +191,23 @@ router.delete('/:id', async (req: Request, res: Response) => {
 });
 
 // Get metadata for institucion form
-router.get('/meta', async (req: Request, res: Response) => {
+router.get('/meta', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
+    let congregacionFilter = {};
+    const { nivel } = req.user || {};
+    
+    // Si no es admin, solo puede ver su congregación
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    }
+
     const [estados, congregaciones] = await Promise.all([
       prisma.estado.findMany({
         where: { entidad: 'INSTITUCION' },
         orderBy: { nombre: 'asc' }
       }),
       prisma.congregacion.findMany({
+        where: congregacionFilter,
         include: { estado: true },
         orderBy: { nombre: 'asc' }
       })
