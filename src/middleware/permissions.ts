@@ -70,9 +70,9 @@ export const requirePermission = (recurso: string, accion: Accion) => {
 export const getAllowedTabs = (nivel: 'USUARIO' | 'ADMIN' | 'SUPERADMIN'): string[] => {
   switch (nivel) {
     case 'SUPERADMIN':
-      return ['dashboard', 'miembros', 'ministerios', 'finanzas', 'eventos', 'inventario', 'comunicaciones', 'usuarios', 'configuracion', 'reportes'];
+      return ['dashboard', 'miembros', 'instituciones', 'finanzas', 'eventos', 'inventario', 'comunicaciones', 'usuarios', 'configuracion', 'reportes'];
     case 'ADMIN':
-      return ['dashboard', 'miembros', 'ministerios', 'finanzas', 'eventos', 'inventario', 'comunicaciones', 'reportes'];
+      return ['dashboard', 'miembros', 'instituciones', 'finanzas', 'eventos', 'inventario', 'comunicaciones', 'reportes'];
     case 'USUARIO':
       return ['dashboard', 'eventos', 'perfil'];
     default:

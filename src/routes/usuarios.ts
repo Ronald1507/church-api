@@ -13,6 +13,34 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Get metadata for user form - MUST BE BEFORE /:id
+router.get('/meta', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+
+  try {
+    const [roles, estados, miembros, congregaciones] = await Promise.all([
+      prisma.rolSistema.findMany({
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.estado.findMany({
+        where: { entidad: 'USUARIO' },
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.miembro.findMany({
+        where: { id_estado: 1 },
+        orderBy: { nombres: 'asc' }
+      }),
+      prisma.congregacion.findMany({
+        include: { estado: true },
+        orderBy: { nombre: 'asc' }
+      })
+    ]);
+    res.json({ roles, estados, miembros, congregaciones });
+  } catch (error) {
+    console.error('Get metadata error:', error);
+    res.status(500).json({ error: 'Error al obtener metadatos' });
+  }
+});
+
 // Get all users - SuperAdmin ve todos, Admin ve solo los de su congregación
 router.get('/', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
   const { nivel, id_congregacion } = req.user || {};
@@ -177,34 +205,6 @@ router.delete('/:id', authenticateToken, requirePermission('usuarios', 'eliminar
   } catch (error) {
     console.error('Error deleting usuario:', error);
     res.status(500).json({ error: 'Error al eliminar usuario' });
-  }
-});
-
-// Get metadata for user form - Solo admin
-router.get('/meta', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
-
-  try {
-    const [roles, estados, miembros, congregaciones] = await Promise.all([
-      prisma.rolSistema.findMany({
-        orderBy: { nombre: 'asc' }
-      }),
-      prisma.estado.findMany({
-        where: { entidad: 'USUARIO' },
-        orderBy: { nombre: 'asc' }
-      }),
-      prisma.miembro.findMany({
-        where: { id_estado: 1 },
-        orderBy: { nombres: 'asc' }
-      }),
-      prisma.congregacion.findMany({
-        include: { estado: true },
-        orderBy: { nombre: 'asc' }
-      })
-    ]);
-    res.json({ roles, estados, miembros, congregaciones });
-  } catch (error) {
-    console.error('Get metadata error:', error);
-    res.status(500).json({ error: 'Error al obtener metadatos' });
   }
 });
 

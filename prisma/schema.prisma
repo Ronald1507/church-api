@@ -17,6 +17,23 @@ enum NivelAcceso {
   SUPERADMIN
 }
 
+enum TipoInstitucion {
+  CORO
+  JOVENES
+  DORCAS
+  ESCUELA_DOMINICAL
+  GUARDERIA
+  OTRO
+}
+
+enum RolInstitucion {
+  LIDER
+  TESORERO
+  SECRETARIO
+  SUPLENTE
+  MIEMBRO
+}
+
 // =============================================================
 // 1. SISTEMA DE ESTADOS CENTRALIZADO
 // =============================================================
@@ -34,9 +51,8 @@ model Estado {
   // Inverse relations
   usuarios            UsuarioSistema[]
   congregaciones      Congregacion[]
-  ministerios         Ministerio[]
   miembros            Miembro[]
-  cargoMinisterials   CargoMinisterial[]
+  cargoInstitucions   CargoInstitucion[]
   visitaPastorals     VisitaPastoral[]
   peticionOraciones   PeticionOracion[]
   institucions        Institucion[]
@@ -45,9 +61,9 @@ model Estado {
   finanzasCuentas     FinanzaCuenta[]
   transaccions        Transaccion[]
   inventarioItems     InventarioItem[]
-  prestamoInventarios PrestamoInventario[]
   comunicacion        Comunicacion[]
   documentos          Documento[]
+  prestamoInventarios PrestamoInventario[]
 
   @@unique([entidad, codigo])
   @@map("estado")
@@ -150,7 +166,6 @@ model Congregacion {
   estado Estado @relation(fields: [id_estado], references: [id_estado])
 
   // Inverse relations
-  ministerios     Ministerio[]
   miembros        Miembro[]
   institucions    Institucion[]
   eventos         Evento[]
@@ -161,28 +176,6 @@ model Congregacion {
   usuarios        UsuarioSistema[]
 
   @@map("congregacion")
-}
-
-model Ministerio {
-  id_ministerio   Int      @id @default(autoincrement())
-  nombre          String   @map("nombre") @db.VarChar(120)
-  descripcion     String?  @map("descripcion") @db.Text
-  id_lider        Int?     @map("id_lider")
-  id_congregacion Int      @map("id_congregacion")
-  id_estado       Int      @map("id_estado")
-  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
-
-  congregacion   Congregacion         @relation(fields: [id_congregacion], references: [id_congregacion])
-  estado         Estado               @relation(fields: [id_estado], references: [id_estado])
-  miembros       Miembro[]
-  cargos         CargoMinisterial[]
-  comunicaciones Comunicacion[]
-  prestamos      PrestamoInventario[]
-
-  @@index([id_congregacion])
-  @@index([id_estado])
-  @@map("ministerio")
 }
 
 model Miembro {
@@ -200,7 +193,6 @@ model Miembro {
   fecha_ingreso    DateTime  @default(now()) @map("fecha_ingreso") @db.Date
   id_estado        Int       @map("id_estado")
   id_congregacion  Int       @map("id_congregacion")
-  id_ministerio    Int?      @map("id_ministerio")
   id_tipo_miembro  Int       @map("id_tipo_miembro")
   created_at       DateTime  @default(now()) @map("created_at") @db.Timestamptz
   updated_at       DateTime  @default(now()) @map("updated_at") @db.Timestamptz
@@ -209,10 +201,9 @@ model Miembro {
   estado       Estado       @relation(fields: [id_estado], references: [id_estado])
   congregacion Congregacion @relation(fields: [id_congregacion], references: [id_congregacion])
   tipoMiembro  TipoMiembro  @relation(fields: [id_tipo_miembro], references: [id_tipo])
-  ministerio   Ministerio?  @relation(fields: [id_ministerio], references: [id_ministerio])
 
   // Inverse relations
-  cargoMinisterials    CargoMinisterial[]
+  cargoInstitucions     CargoInstitucion[]
   relacionesOrigen     RelacionFamiliar[]    @relation("RelacionOrigen")
   relacionesDestino    RelacionFamiliar[]    @relation("RelacionDestino")
   historialEspirituals HistorialEspiritual[]
@@ -225,29 +216,8 @@ model Miembro {
   documentos           Documento[]
 
   @@index([id_congregacion])
-  @@index([id_ministerio])
   @@index([id_estado])
   @@map("miembro")
-}
-
-model CargoMinisterial {
-  id_cargo      Int       @id @default(autoincrement())
-  id_miembro    Int       @map("id_miembro")
-  id_ministerio Int       @map("id_ministerio")
-  cargo         String    @map("cargo") @db.VarChar(80)
-  fecha_inicio  DateTime  @map("fecha_inicio") @db.Date
-  fecha_fin     DateTime? @map("fecha_fin") @db.Date
-  id_estado     Int       @map("id_estado")
-  created_at    DateTime  @default(now()) @map("created_at") @db.Timestamptz
-  updated_at    DateTime  @default(now()) @map("updated_at") @db.Timestamptz
-
-  miembro    Miembro    @relation(fields: [id_miembro], references: [id_miembro])
-  ministerio Ministerio @relation(fields: [id_ministerio], references: [id_ministerio])
-  estado     Estado     @relation(fields: [id_estado], references: [id_estado])
-
-  @@index([id_miembro])
-  @@index([id_ministerio])
-  @@map("cargo_ministerial")
 }
 
 // =============================================================
@@ -365,25 +335,29 @@ model PeticionOracion {
 }
 
 // =============================================================
-// 7. MÓDULO INSTITUCIONES
+// 7. MÓDULO INSTITUCIONES (ESTRUCTURA DE MINISTERIOS)
 // =============================================================
 model Institucion {
-  id_institucion  Int      @id @default(autoincrement())
-  nombre          String   @map("nombre") @db.VarChar(120)
-  tipo            String?  @map("tipo") @db.VarChar(60)
-  descripcion     String?  @map("descripcion") @db.Text
-  id_congregacion Int      @map("id_congregacion")
-  id_estado       Int      @map("id_estado")
-  created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  id_institucion  Int       @id @default(autoincrement())
+  nombre          String    @map("nombre") @db.VarChar(120)
+  tipo            String    @map("tipo") @db.VarChar(60)  // CORO, JOVENES, DORCAS, ESCUELA_DOMINICAL, GUARDERIA, OTRO
+  descripcion     String?   @map("descripcion") @db.Text
+  id_congregacion Int       @map("id_congregacion")
+  id_estado       Int       @map("id_estado")
+  created_at      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  congregacion Congregacion @relation(fields: [id_congregacion], references: [id_congregacion])
-  estado       Estado       @relation(fields: [id_estado], references: [id_estado])
+  congregacion Congregacion    @relation(fields: [id_congregacion], references: [id_congregacion])
+  estado       Estado          @relation(fields: [id_estado], references: [id_estado])
 
-  // Inverse relation
-  miembroInstitucions MiembroInstitucion[]
+  // Inverse relations
+  cargoInstitucions     CargoInstitucion[]
+  miembroInstitucions  MiembroInstitucion[]
+  comunicaciones        Comunicacion[]
+  prestamos             PrestamoInventario[]
 
   @@index([id_congregacion])
+  @@index([id_estado])
   @@map("institucion")
 }
 
@@ -391,7 +365,7 @@ model MiembroInstitucion {
   id             Int      @id @default(autoincrement())
   id_miembro     Int      @map("id_miembro")
   id_institucion Int      @map("id_institucion")
-  rol            String?  @map("rol") @db.VarChar(80)
+  rol            String?  @map("rol") @db.VarChar(80)  // LIDER, TESORERO, SECRETARIO, MIEMBRO
   fecha_ingreso  DateTime @default(now()) @map("fecha_ingreso") @db.Date
   id_estado      Int      @map("id_estado")
   created_at     DateTime @default(now()) @map("created_at") @db.Timestamptz
@@ -405,6 +379,26 @@ model MiembroInstitucion {
   @@index([id_miembro])
   @@index([id_institucion])
   @@map("miembro_institucion")
+}
+
+model CargoInstitucion {
+  id_cargo        Int       @id @default(autoincrement())
+  id_miembro      Int       @map("id_miembro")
+  id_institucion  Int       @map("id_institucion")
+  rol             String    @map("rol") @db.VarChar(80)  // LIDER, TESORERO, SECRETARIO, SUPLENTE, MIEMBRO
+  fecha_inicio    DateTime  @map("fecha_inicio") @db.Date
+  fecha_fin       DateTime? @map("fecha_fin") @db.Date
+  id_estado       Int       @map("id_estado")
+  created_at      DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at      DateTime  @default(now()) @map("updated_at") @db.Timestamptz
+
+  miembro     Miembro     @relation(fields: [id_miembro], references: [id_miembro])
+  institucion Institucion @relation(fields: [id_institucion], references: [id_institucion])
+  estado      Estado      @relation(fields: [id_estado], references: [id_estado])
+
+  @@index([id_miembro])
+  @@index([id_institucion])
+  @@map("cargo_institucion")
 }
 
 // =============================================================
@@ -582,7 +576,7 @@ model MovimientoInventario {
 model PrestamoInventario {
   id_prestamo               Int       @id @default(autoincrement())
   id_item                   Int       @map("id_item")
-  id_ministerio             Int?      @map("id_ministerio")
+  id_institucion            Int?      @map("id_institucion")
   fecha_prestamo            DateTime  @default(now()) @map("fecha_prestamo") @db.Date
   fecha_devolucion_esperada DateTime  @map("fecha_devolucion_esperada") @db.Date
   fecha_devolucion_real     DateTime? @map("fecha_devolucion_real") @db.Date
@@ -593,7 +587,7 @@ model PrestamoInventario {
   updated_at                DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   item        InventarioItem @relation(fields: [id_item], references: [id_item])
-  ministerios Ministerio?    @relation(fields: [id_ministerio], references: [id_ministerio])
+  institucion Institucion?   @relation(fields: [id_institucion], references: [id_institucion])
   estado      Estado         @relation(fields: [id_estado], references: [id_estado])
 
   @@index([id_item])
@@ -611,7 +605,7 @@ model Comunicacion {
   canal             String    @map("canal") @db.VarChar(20)
   destinatario_tipo String    @map("destinatario_tipo") @db.VarChar(20)
   id_congregacion   Int?      @map("id_congregacion")
-  id_ministerio     Int?      @map("id_ministerio")
+  id_institucion   Int?      @map("id_institucion")  // NUEVO: para enviar comunicaciones a instituciones específicas
   id_enviado_por    Int       @map("id_enviado_por")
   fecha_envio       DateTime? @map("fecha_envio") @db.Timestamptz
   id_estado         Int       @map("id_estado")
@@ -619,8 +613,8 @@ model Comunicacion {
   updated_at        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
   congregacion Congregacion? @relation(fields: [id_congregacion], references: [id_congregacion])
-  ministerios  Ministerio?   @relation(fields: [id_ministerio], references: [id_ministerio])
-  estado       Estado        @relation(fields: [id_estado], references: [id_estado])
+  institucion  Institucion?   @relation(fields: [id_institucion], references: [id_institucion])
+  estado      Estado         @relation(fields: [id_estado], references: [id_estado])
 
   @@index([id_estado])
   @@map("comunicacion")

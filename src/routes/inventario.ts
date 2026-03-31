@@ -12,6 +12,37 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// ==================== METADATA - MUST BE BEFORE /:id ====================
+
+// Get metadata for inventory forms
+router.get('/meta', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    let congregacionFilter = {};
+    const { nivel } = req.user || {};
+    
+    // Si no es admin, solo puede ver su congregación
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    }
+
+    const [estados, congregaciones] = await Promise.all([
+      prisma.estado.findMany({
+        where: { entidad: 'INVENTARIO' },
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.congregacion.findMany({
+        where: congregacionFilter,
+        include: { estado: true },
+        orderBy: { nombre: 'asc' }
+      })
+    ]);
+    res.json({ estados, congregaciones });
+  } catch (error) {
+    console.error('Get metadata error:', error);
+    res.status(500).json({ error: 'Error al obtener metadatos' });
+  }
+});
+
 // ==================== ITEMS ====================
 
 // Get all items - filtrado por congregación
@@ -277,37 +308,6 @@ router.post('/movimientos', authenticateToken, requirePermission('inventario', '
   } catch (error) {
     console.error('Error creating movimiento:', error);
     res.status(500).json({ error: 'Error al crear movimiento' });
-  }
-});
-
-// ==================== METADATA ====================
-
-// Get metadata for inventory forms
-router.get('/meta', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
-  try {
-    let congregacionFilter = {};
-    const { nivel } = req.user || {};
-    
-    // Si no es admin, solo puede ver su congregación
-    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
-      congregacionFilter = { id_congregacion: req.user.id_congregacion };
-    }
-
-    const [estados, congregaciones] = await Promise.all([
-      prisma.estado.findMany({
-        where: { entidad: 'INVENTARIO' },
-        orderBy: { nombre: 'asc' }
-      }),
-      prisma.congregacion.findMany({
-        where: congregacionFilter,
-        include: { estado: true },
-        orderBy: { nombre: 'asc' }
-      })
-    ]);
-    res.json({ estados, congregaciones });
-  } catch (error) {
-    console.error('Get metadata error:', error);
-    res.status(500).json({ error: 'Error al obtener metadatos' });
   }
 });
 

@@ -14,6 +14,20 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
+// Get metadata for congregacion form - MUST BE BEFORE /:id - Solo SuperAdmin
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'admin'), async (req, res) => {
+    try {
+        const estados = await db_1.default.estado.findMany({
+            where: { entidad: 'CONGREGACION' },
+            orderBy: { nombre: 'asc' }
+        });
+        res.json({ estados });
+    }
+    catch (error) {
+        console.error('Get metadata error:', error);
+        res.status(500).json({ error: 'Error al obtener metadatos' });
+    }
+});
 // Get all congregaciones - Solo SuperAdmin puede ver todas las congregaciones
 // Los Admin ven su propia congregación
 router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'leer'), async (req, res) => {
@@ -143,20 +157,6 @@ router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermiss
     catch (error) {
         console.error('Error deleting congregacion:', error);
         res.status(500).json({ error: 'Error al eliminar congregación' });
-    }
-});
-// Get metadata for congregacion form - Solo SuperAdmin
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'admin'), async (req, res) => {
-    try {
-        const estados = await db_1.default.estado.findMany({
-            where: { entidad: 'CONGREGACION' },
-            orderBy: { nombre: 'asc' }
-        });
-        res.json({ estados });
-    }
-    catch (error) {
-        console.error('Get metadata error:', error);
-        res.status(500).json({ error: 'Error al obtener metadatos' });
     }
 });
 exports.default = router;

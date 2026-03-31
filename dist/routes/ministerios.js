@@ -14,6 +14,40 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
+// Get metadata for ministry form - MUST BE BEFORE /:id
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('ministerios', 'leer'), async (req, res) => {
+    try {
+        let congregacionFilter = {};
+        const { nivel } = req.user || {};
+        // Si no es admin, solo puede ver su congregación
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionFilter = { id_congregacion: req.user.id_congregacion };
+        }
+        const [estados, congregaciones, miembros] = await Promise.all([
+            db_1.default.estado.findMany({
+                where: { entidad: 'MINISTERIO' },
+                orderBy: { nombre: 'asc' }
+            }),
+            db_1.default.congregacion.findMany({
+                where: congregacionFilter,
+                include: { estado: true },
+                orderBy: { nombre: 'asc' }
+            }),
+            db_1.default.miembro.findMany({
+                where: {
+                    id_estado: 1, // Solo activos
+                    ...congregacionFilter
+                },
+                orderBy: { nombres: 'asc' }
+            })
+        ]);
+        res.json({ estados, congregaciones, miembros });
+    }
+    catch (error) {
+        console.error('Get metadata error:', error);
+        res.status(500).json({ error: 'Error al obtener metadatos' });
+    }
+});
 // Get all ministerios - filtrado por congregación
 router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('ministerios', 'leer'), async (req, res) => {
     try {
@@ -173,40 +207,6 @@ router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermiss
     catch (error) {
         console.error('Error deleting ministry:', error);
         res.status(500).json({ error: 'Error al eliminar ministerio' });
-    }
-});
-// Get metadata for ministry form
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('ministerios', 'leer'), async (req, res) => {
-    try {
-        let congregacionFilter = {};
-        const { nivel } = req.user || {};
-        // Si no es admin, solo puede ver su congregación
-        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
-            congregacionFilter = { id_congregacion: req.user.id_congregacion };
-        }
-        const [estados, congregaciones, miembros] = await Promise.all([
-            db_1.default.estado.findMany({
-                where: { entidad: 'MINISTERIO' },
-                orderBy: { nombre: 'asc' }
-            }),
-            db_1.default.congregacion.findMany({
-                where: congregacionFilter,
-                include: { estado: true },
-                orderBy: { nombre: 'asc' }
-            }),
-            db_1.default.miembro.findMany({
-                where: {
-                    id_estado: 1, // Solo activos
-                    ...congregacionFilter
-                },
-                orderBy: { nombres: 'asc' }
-            })
-        ]);
-        res.json({ estados, congregaciones, miembros });
-    }
-    catch (error) {
-        console.error('Get metadata error:', error);
-        res.status(500).json({ error: 'Error al obtener metadatos' });
     }
 });
 exports.default = router;

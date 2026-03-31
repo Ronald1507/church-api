@@ -12,6 +12,35 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Get metadata for evento form - MUST BE BEFORE /:id
+router.get('/meta', authenticateToken, requirePermission('eventos', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    let congregacionFilter = {};
+    const { nivel } = req.user || {};
+    
+    // Si no es admin, solo puede ver su congregación
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    }
+
+    const [estados, congregaciones] = await Promise.all([
+      prisma.estado.findMany({
+        where: { entidad: 'EVENTO' },
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.congregacion.findMany({
+        where: congregacionFilter,
+        include: { estado: true },
+        orderBy: { nombre: 'asc' }
+      })
+    ]);
+    res.json({ estados, congregaciones });
+  } catch (error) {
+    console.error('Get metadata error:', error);
+    res.status(500).json({ error: 'Error al obtener metadatos' });
+  }
+});
+
 // Get all eventos - filtrado por congregación
 router.get('/', authenticateToken, requirePermission('eventos', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
@@ -199,35 +228,6 @@ router.delete('/:id', authenticateToken, requirePermission('eventos', 'eliminar'
   } catch (error) {
     console.error('Error deleting evento:', error);
     res.status(500).json({ error: 'Error al eliminar evento' });
-  }
-});
-
-// Get metadata for evento form
-router.get('/meta', authenticateToken, requirePermission('eventos', 'leer'), async (req: AuthRequest, res: Response) => {
-  try {
-    let congregacionFilter = {};
-    const { nivel } = req.user || {};
-    
-    // Si no es admin, solo puede ver su congregación
-    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
-      congregacionFilter = { id_congregacion: req.user.id_congregacion };
-    }
-
-    const [estados, congregaciones] = await Promise.all([
-      prisma.estado.findMany({
-        where: { entidad: 'EVENTO' },
-        orderBy: { nombre: 'asc' }
-      }),
-      prisma.congregacion.findMany({
-        where: congregacionFilter,
-        include: { estado: true },
-        orderBy: { nombre: 'asc' }
-      })
-    ]);
-    res.json({ estados, congregaciones });
-  } catch (error) {
-    console.error('Get metadata error:', error);
-    res.status(500).json({ error: 'Error al obtener metadatos' });
   }
 });
 

@@ -15,6 +15,33 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
+// Get metadata for user form - MUST BE BEFORE /:id
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
+    try {
+        const [roles, estados, miembros, congregaciones] = await Promise.all([
+            db_1.default.rolSistema.findMany({
+                orderBy: { nombre: 'asc' }
+            }),
+            db_1.default.estado.findMany({
+                where: { entidad: 'USUARIO' },
+                orderBy: { nombre: 'asc' }
+            }),
+            db_1.default.miembro.findMany({
+                where: { id_estado: 1 },
+                orderBy: { nombres: 'asc' }
+            }),
+            db_1.default.congregacion.findMany({
+                include: { estado: true },
+                orderBy: { nombre: 'asc' }
+            })
+        ]);
+        res.json({ roles, estados, miembros, congregaciones });
+    }
+    catch (error) {
+        console.error('Get metadata error:', error);
+        res.status(500).json({ error: 'Error al obtener metadatos' });
+    }
+});
 // Get all users - SuperAdmin ve todos, Admin ve solo los de su congregación
 router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     const { nivel, id_congregacion } = req.user || {};
@@ -161,33 +188,6 @@ router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermiss
     catch (error) {
         console.error('Error deleting usuario:', error);
         res.status(500).json({ error: 'Error al eliminar usuario' });
-    }
-});
-// Get metadata for user form - Solo admin
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
-    try {
-        const [roles, estados, miembros, congregaciones] = await Promise.all([
-            db_1.default.rolSistema.findMany({
-                orderBy: { nombre: 'asc' }
-            }),
-            db_1.default.estado.findMany({
-                where: { entidad: 'USUARIO' },
-                orderBy: { nombre: 'asc' }
-            }),
-            db_1.default.miembro.findMany({
-                where: { id_estado: 1 },
-                orderBy: { nombres: 'asc' }
-            }),
-            db_1.default.congregacion.findMany({
-                include: { estado: true },
-                orderBy: { nombre: 'asc' }
-            })
-        ]);
-        res.json({ roles, estados, miembros, congregaciones });
-    }
-    catch (error) {
-        console.error('Get metadata error:', error);
-        res.status(500).json({ error: 'Error al obtener metadatos' });
     }
 });
 exports.default = router;

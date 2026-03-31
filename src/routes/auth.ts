@@ -200,6 +200,7 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => 
       id: user.id_usuario,
       username: user.username,
       email: user.email,
+      nivel: user.nivel || user.rol.nombre,
       role: user.rol.nombre,
       id_congregacion: user.id_congregacion,
       congregacion: user.congregacion,

@@ -12,6 +12,37 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// ==================== METADATA - MUST BE BEFORE OTHER ROUTES ====================
+
+// Get metadata for finance forms
+router.get('/meta', authenticateToken, requirePermission('finanzas', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    let congregacionFilter = {};
+    const { nivel } = req.user || {};
+    
+    // Si no es admin, solo puede ver su congregación
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    }
+
+    const [estados, congregaciones] = await Promise.all([
+      prisma.estado.findMany({
+        where: { entidad: 'TRANSACCION' },
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.congregacion.findMany({
+        where: congregacionFilter,
+        include: { estado: true },
+        orderBy: { nombre: 'asc' }
+      })
+    ]);
+    res.json({ estados, congregaciones });
+  } catch (error) {
+    console.error('Get metadata error:', error);
+    res.status(500).json({ error: 'Error al obtener metadatos' });
+  }
+});
+
 // ==================== CUENTAS ====================
 
 // Get all cuentas - filtrado por congregación
@@ -345,37 +376,6 @@ router.delete('/transacciones/:id', authenticateToken, requirePermission('finanz
   } catch (error) {
     console.error('Error deleting transaccion:', error);
     res.status(500).json({ error: 'Error al eliminar transacción' });
-  }
-});
-
-// ==================== METADATA ====================
-
-// Get metadata for finance forms
-router.get('/meta', authenticateToken, requirePermission('finanzas', 'leer'), async (req: AuthRequest, res: Response) => {
-  try {
-    let congregacionFilter = {};
-    const { nivel } = req.user || {};
-    
-    // Si no es admin, solo puede ver su congregación
-    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
-      congregacionFilter = { id_congregacion: req.user.id_congregacion };
-    }
-
-    const [estados, congregaciones] = await Promise.all([
-      prisma.estado.findMany({
-        where: { entidad: 'TRANSACCION' },
-        orderBy: { nombre: 'asc' }
-      }),
-      prisma.congregacion.findMany({
-        where: congregacionFilter,
-        include: { estado: true },
-        orderBy: { nombre: 'asc' }
-      })
-    ]);
-    res.json({ estados, congregaciones });
-  } catch (error) {
-    console.error('Get metadata error:', error);
-    res.status(500).json({ error: 'Error al obtener metadatos' });
   }
 });
 

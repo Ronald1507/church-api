@@ -25,38 +25,38 @@ app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
 // Rutas
-app.use('/api/auth', auth_1.default);
-app.use('/api/miembros', miembros_1.default);
-app.use('/api/ministerios', ministerios_1.default);
-app.use('/api/congregaciones', congregaciones_1.default);
-app.use('/api/eventos', eventos_1.default);
-app.use('/api/finanzas', finanzas_1.default);
-app.use('/api/usuarios', usuarios_1.default);
-app.use('/api/inventario', inventario_1.default);
-app.use('/api/instituciones', instituciones_1.default);
+app.use("/api/auth", auth_1.default);
+app.use("/api/miembros", miembros_1.default);
+app.use("/api/ministerios", ministerios_1.default);
+app.use("/api/congregaciones", congregaciones_1.default);
+app.use("/api/eventos", eventos_1.default);
+app.use("/api/finanzas", finanzas_1.default);
+app.use("/api/usuarios", usuarios_1.default);
+app.use("/api/inventario", inventario_1.default);
+app.use("/api/instituciones", instituciones_1.default);
 // Health check
-app.get('/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get("/health", (req, res) => {
+    res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 // Error handling middleware
 app.use((err, req, res, next) => {
-    console.error('Error:', err.message);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    console.error("Error:", err.message);
+    res.status(500).json({ error: "Error interno del servidor" });
 });
 // 404 handler
 app.use((req, res) => {
-    res.status(404).json({ error: 'Ruta no encontrada' });
+    res.status(404).json({ error: "Ruta no encontrada" });
 });
 async function main() {
     try {
         await db_1.default.$connect();
-        console.log('Database connected');
+        console.log("Database connected");
         app.listen(PORT, () => {
             console.log(`Server running on port ${PORT}`);
         });
     }
     catch (error) {
-        console.error('Failed to connect to database:', error);
+        console.error("Failed to connect to database:", error);
         process.exit(1);
     }
 }

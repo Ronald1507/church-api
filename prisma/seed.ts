@@ -8,7 +8,7 @@ const { Pool } = pg;
 
 const RECURSOS = [
   'miembros',
-  'ministerios',
+  'instituciones',
   'finanzas',
   'eventos',
   'inventario',
@@ -70,7 +70,7 @@ async function main() {
 
     const adminPermisos = [
       ...ACCIONES.map(a => ({ recurso: 'miembros', accion: a })),
-      ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'ministerios', accion: a })),
+      ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'instituciones', accion: a })),
       ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'finanzas', accion: a })),
       ...ACCIONES.map(a => ({ recurso: 'eventos', accion: a })),
       ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'inventario', accion: a })),

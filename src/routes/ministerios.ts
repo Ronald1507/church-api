@@ -12,6 +12,42 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Get metadata for ministry form - MUST BE BEFORE /:id
+router.get('/meta', authenticateToken, requirePermission('ministerios', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    let congregacionFilter = {};
+    const { nivel } = req.user || {};
+    
+    // Si no es admin, solo puede ver su congregación
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+      congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    }
+
+    const [estados, congregaciones, miembros] = await Promise.all([
+      prisma.estado.findMany({
+        where: { entidad: 'MINISTERIO' },
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.congregacion.findMany({
+        where: congregacionFilter,
+        include: { estado: true },
+        orderBy: { nombre: 'asc' }
+      }),
+      prisma.miembro.findMany({
+        where: { 
+          id_estado: 1, // Solo activos
+          ...congregacionFilter
+        },
+        orderBy: { nombres: 'asc' }
+      })
+    ]);
+    res.json({ estados, congregaciones, miembros });
+  } catch (error) {
+    console.error('Get metadata error:', error);
+    res.status(500).json({ error: 'Error al obtener metadatos' });
+  }
+});
+
 // Get all ministerios - filtrado por congregación
 router.get('/', authenticateToken, requirePermission('ministerios', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
@@ -192,42 +228,6 @@ router.delete('/:id', authenticateToken, requirePermission('ministerios', 'elimi
   } catch (error) {
     console.error('Error deleting ministry:', error);
     res.status(500).json({ error: 'Error al eliminar ministerio' });
-  }
-});
-
-// Get metadata for ministry form
-router.get('/meta', authenticateToken, requirePermission('ministerios', 'leer'), async (req: AuthRequest, res: Response) => {
-  try {
-    let congregacionFilter = {};
-    const { nivel } = req.user || {};
-    
-    // Si no es admin, solo puede ver su congregación
-    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
-      congregacionFilter = { id_congregacion: req.user.id_congregacion };
-    }
-
-    const [estados, congregaciones, miembros] = await Promise.all([
-      prisma.estado.findMany({
-        where: { entidad: 'MINISTERIO' },
-        orderBy: { nombre: 'asc' }
-      }),
-      prisma.congregacion.findMany({
-        where: congregacionFilter,
-        include: { estado: true },
-        orderBy: { nombre: 'asc' }
-      }),
-      prisma.miembro.findMany({
-        where: { 
-          id_estado: 1, // Solo activos
-          ...congregacionFilter
-        },
-        orderBy: { nombres: 'asc' }
-      })
-    ]);
-    res.json({ estados, congregaciones, miembros });
-  } catch (error) {
-    console.error('Get metadata error:', error);
-    res.status(500).json({ error: 'Error al obtener metadatos' });
   }
 });
 

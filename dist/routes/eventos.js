@@ -14,6 +14,33 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
+// Get metadata for evento form - MUST BE BEFORE /:id
+router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
+    try {
+        let congregacionFilter = {};
+        const { nivel } = req.user || {};
+        // Si no es admin, solo puede ver su congregación
+        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
+            congregacionFilter = { id_congregacion: req.user.id_congregacion };
+        }
+        const [estados, congregaciones] = await Promise.all([
+            db_1.default.estado.findMany({
+                where: { entidad: 'EVENTO' },
+                orderBy: { nombre: 'asc' }
+            }),
+            db_1.default.congregacion.findMany({
+                where: congregacionFilter,
+                include: { estado: true },
+                orderBy: { nombre: 'asc' }
+            })
+        ]);
+        res.json({ estados, congregaciones });
+    }
+    catch (error) {
+        console.error('Get metadata error:', error);
+        res.status(500).json({ error: 'Error al obtener metadatos' });
+    }
+});
 // Get all eventos - filtrado por congregación
 router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
     try {
@@ -179,33 +206,6 @@ router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermiss
     catch (error) {
         console.error('Error deleting evento:', error);
         res.status(500).json({ error: 'Error al eliminar evento' });
-    }
-});
-// Get metadata for evento form
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
-    try {
-        let congregacionFilter = {};
-        const { nivel } = req.user || {};
-        // Si no es admin, solo puede ver su congregación
-        if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
-            congregacionFilter = { id_congregacion: req.user.id_congregacion };
-        }
-        const [estados, congregaciones] = await Promise.all([
-            db_1.default.estado.findMany({
-                where: { entidad: 'EVENTO' },
-                orderBy: { nombre: 'asc' }
-            }),
-            db_1.default.congregacion.findMany({
-                where: congregacionFilter,
-                include: { estado: true },
-                orderBy: { nombre: 'asc' }
-            })
-        ]);
-        res.json({ estados, congregaciones });
-    }
-    catch (error) {
-        console.error('Get metadata error:', error);
-        res.status(500).json({ error: 'Error al obtener metadatos' });
     }
 });
 exports.default = router;

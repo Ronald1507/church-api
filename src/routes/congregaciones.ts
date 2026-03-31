@@ -12,6 +12,20 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Get metadata for congregacion form - MUST BE BEFORE /:id - Solo SuperAdmin
+router.get('/meta', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
+  try {
+    const estados = await prisma.estado.findMany({
+      where: { entidad: 'CONGREGACION' },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json({ estados });
+  } catch (error) {
+    console.error('Get metadata error:', error);
+    res.status(500).json({ error: 'Error al obtener metadatos' });
+  }
+});
+
 // Get all congregaciones - Solo SuperAdmin puede ver todas las congregaciones
 // Los Admin ven su propia congregación
 router.get('/', authenticateToken, requirePermission('configuracion', 'leer'), async (req: AuthRequest, res: Response) => {
@@ -154,20 +168,6 @@ router.delete('/:id', authenticateToken, requirePermission('configuracion', 'adm
   } catch (error) {
     console.error('Error deleting congregacion:', error);
     res.status(500).json({ error: 'Error al eliminar congregación' });
-  }
-});
-
-// Get metadata for congregacion form - Solo SuperAdmin
-router.get('/meta', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
-  try {
-    const estados = await prisma.estado.findMany({
-      where: { entidad: 'CONGREGACION' },
-      orderBy: { nombre: 'asc' }
-    });
-    res.json({ estados });
-  } catch (error) {
-    console.error('Get metadata error:', error);
-    res.status(500).json({ error: 'Error al obtener metadatos' });
   }
 });
 
