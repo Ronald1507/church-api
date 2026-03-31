@@ -12,68 +12,67 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Get all ministerios
+// Get all eventos
 router.get('/', async (req, res) => {
     try {
-        const ministerios = await db_1.default.ministerio.findMany({
+        const eventos = await db_1.default.evento.findMany({
             include: {
                 congregacion: true,
                 estado: true
             },
-            orderBy: { nombre: 'asc' }
+            orderBy: { fecha_inicio: 'desc' }
         });
-        res.json(ministerios);
+        res.json(eventos);
     }
     catch (error) {
-        console.error('Error getting ministerios:', error);
-        res.status(500).json({ error: 'Error al obtener ministerios' });
+        console.error('Error getting eventos:', error);
+        res.status(500).json({ error: 'Error al obtener eventos' });
     }
 });
-// Get ministerio by ID
+// Get evento by ID
 router.get('/:id', async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
-        const ministry = await db_1.default.ministerio.findUnique({
-            where: { id_ministerio: id },
+        const evento = await db_1.default.evento.findUnique({
+            where: { id_evento: id },
             include: {
                 congregacion: true,
                 estado: true,
-                miembros: true,
-                cargos: {
-                    include: { miembro: true, estado: true }
-                },
-                comunicaciones: true,
-                prestamos: {
-                    include: { item: true, estado: true }
+                asistencia: {
+                    include: { miembro: true }
                 }
             }
         });
-        if (!ministry) {
-            return res.status(404).json({ error: 'Ministerio no encontrado' });
+        if (!evento) {
+            return res.status(404).json({ error: 'Evento no encontrado' });
         }
-        res.json(ministry);
+        res.json(evento);
     }
     catch (error) {
-        console.error('Error getting ministry:', error);
-        res.status(500).json({ error: 'Error al obtener ministerio' });
+        console.error('Error getting evento:', error);
+        res.status(500).json({ error: 'Error al obtener evento' });
     }
 });
-// Create ministerio
+// Create evento
 router.post('/', async (req, res) => {
     try {
-        const { nombre, descripcion, id_lider, id_congregacion, id_estado } = req.body;
-        if (!nombre || !id_congregacion || !id_estado) {
+        const { nombre, tipo, descripcion, fecha_inicio, fecha_fin, lugar, id_congregacion, capacidad_max, id_estado } = req.body;
+        if (!nombre || !fecha_inicio || !id_congregacion || !id_estado) {
             return res.status(400).json({ error: 'Faltan campos requeridos' });
         }
-        const newMinisterio = await db_1.default.ministerio.create({
+        const newEvento = await db_1.default.evento.create({
             data: {
                 nombre,
+                tipo,
                 descripcion,
-                id_lider,
+                fecha_inicio: new Date(fecha_inicio),
+                fecha_fin: fecha_fin ? new Date(fecha_fin) : null,
+                lugar,
                 id_congregacion,
+                capacidad_max,
                 id_estado
             },
             include: {
@@ -81,14 +80,14 @@ router.post('/', async (req, res) => {
                 estado: true
             }
         });
-        res.status(201).json(newMinisterio);
+        res.status(201).json(newEvento);
     }
     catch (error) {
-        console.error('Error creating ministry:', error);
-        res.status(500).json({ error: 'Error al crear ministerio' });
+        console.error('Error creating evento:', error);
+        res.status(500).json({ error: 'Error al crear evento' });
     }
 });
-// Update ministerio
+// Update evento
 router.put('/:id', async (req, res) => {
     try {
         const id = getId(req);
@@ -96,59 +95,62 @@ router.put('/:id', async (req, res) => {
             return res.status(400).json({ error: 'ID inválido' });
         }
         const updateData = { ...req.body };
-        delete updateData.id_ministerio;
+        delete updateData.id_evento;
         delete updateData.created_at;
         delete updateData.updated_at;
-        const updatedMinisterio = await db_1.default.ministerio.update({
-            where: { id_ministerio: id },
+        // Convert dates
+        if (updateData.fecha_inicio) {
+            updateData.fecha_inicio = new Date(updateData.fecha_inicio);
+        }
+        if (updateData.fecha_fin) {
+            updateData.fecha_fin = new Date(updateData.fecha_fin);
+        }
+        const updatedEvento = await db_1.default.evento.update({
+            where: { id_evento: id },
             data: updateData,
             include: {
                 congregacion: true,
                 estado: true
             }
         });
-        res.json(updatedMinisterio);
+        res.json(updatedEvento);
     }
     catch (error) {
-        console.error('Error updating ministry:', error);
-        res.status(500).json({ error: 'Error al actualizar ministerio' });
+        console.error('Error updating evento:', error);
+        res.status(500).json({ error: 'Error al actualizar evento' });
     }
 });
-// Delete ministerio
+// Delete evento
 router.delete('/:id', async (req, res) => {
     try {
         const id = getId(req);
         if (id === null) {
             return res.status(400).json({ error: 'ID inválido' });
         }
-        await db_1.default.ministerio.delete({
-            where: { id_ministerio: id }
+        await db_1.default.evento.delete({
+            where: { id_evento: id }
         });
-        res.json({ message: 'Ministerio eliminado correctamente' });
+        res.json({ message: 'Evento eliminado correctamente' });
     }
     catch (error) {
-        console.error('Error deleting ministry:', error);
-        res.status(500).json({ error: 'Error al eliminar ministerio' });
+        console.error('Error deleting evento:', error);
+        res.status(500).json({ error: 'Error al eliminar evento' });
     }
 });
-// Get metadata for ministry form
+// Get metadata for evento form
 router.get('/meta', async (req, res) => {
     try {
-        const [estados, congregaciones, miembros] = await Promise.all([
+        const [estados, congregaciones] = await Promise.all([
             db_1.default.estado.findMany({
-                where: { entidad: 'MINISTERIO' },
+                where: { entidad: 'EVENTO' },
                 orderBy: { nombre: 'asc' }
             }),
             db_1.default.congregacion.findMany({
                 include: { estado: true },
                 orderBy: { nombre: 'asc' }
-            }),
-            db_1.default.miembro.findMany({
-                where: { id_estado: 1 }, // Solo activos
-                orderBy: { nombres: 'asc' }
             })
         ]);
-        res.json({ estados, congregaciones, miembros });
+        res.json({ estados, congregaciones });
     }
     catch (error) {
         console.error('Get metadata error:', error);
@@ -156,4 +158,4 @@ router.get('/meta', async (req, res) => {
     }
 });
 exports.default = router;
-//# sourceMappingURL=ministerios.js.map
+//# sourceMappingURL=eventos.js.map

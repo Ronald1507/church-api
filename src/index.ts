@@ -8,8 +8,13 @@ import prisma from './config/db';
 // Rutas
 import authRoutes from './routes/auth';
 import miembroRoutes from './routes/miembros';
-import ministerioRoutes from './routes/ministerios';
+import ministryRoutes from './routes/ministerios';
 import congregacionRoutes from './routes/congregaciones';
+import eventoRoutes from './routes/eventos';
+import finanzasRoutes from './routes/finanzas';
+import usuarioRoutes from './routes/usuarios';
+import inventarioRoutes from './routes/inventario';
+import institucionRoutes from './routes/instituciones';
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
@@ -22,8 +27,13 @@ app.use(express.urlencoded({ extended: true }));
 // Rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/miembros', miembroRoutes);
-app.use('/api/ministerios', ministerioRoutes);
+app.use('/api/ministerios', ministryRoutes);
 app.use('/api/congregaciones', congregacionRoutes);
+app.use('/api/eventos', eventoRoutes);
+app.use('/api/finanzas', finanzasRoutes);
+app.use('/api/usuarios', usuarioRoutes);
+app.use('/api/inventario', inventarioRoutes);
+app.use('/api/instituciones', institucionRoutes);
 
 // Health check
 app.get('/health', (req: Request, res: Response) => {

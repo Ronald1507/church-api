@@ -139,4 +139,18 @@ router.delete('/:id', async (req: Request, res: Response) => {
   }
 });
 
+// Get metadata for congregacion form
+router.get('/meta', async (req: Request, res: Response) => {
+  try {
+    const estados = await prisma.estado.findMany({
+      where: { entidad: 'CONGREGACION' },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json({ estados });
+  } catch (error) {
+    console.error('Get metadata error:', error);
+    res.status(500).json({ error: 'Error al obtener metadatos' });
+  }
+});
+
 export default router;

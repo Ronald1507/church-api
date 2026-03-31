@@ -130,5 +130,19 @@ router.delete('/:id', async (req, res) => {
         res.status(500).json({ error: 'Error al eliminar congregación' });
     }
 });
+// Get metadata for congregacion form
+router.get('/meta', async (req, res) => {
+    try {
+        const estados = await db_1.default.estado.findMany({
+            where: { entidad: 'CONGREGACION' },
+            orderBy: { nombre: 'asc' }
+        });
+        res.json({ estados });
+    }
+    catch (error) {
+        console.error('Get metadata error:', error);
+        res.status(500).json({ error: 'Error al obtener metadatos' });
+    }
+});
 exports.default = router;
 //# sourceMappingURL=congregaciones.js.map

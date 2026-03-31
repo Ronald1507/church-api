@@ -10,24 +10,24 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get all ministerios
+// Get all instituciones
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const ministerios = await prisma.ministerio.findMany({
+    const instituciones = await prisma.institucion.findMany({
       include: {
         congregacion: true,
         estado: true
       },
       orderBy: { nombre: 'asc' }
     });
-    res.json(ministerios);
+    res.json(instituciones);
   } catch (error) {
-    console.error('Error getting ministerios:', error);
-    res.status(500).json({ error: 'Error al obtener ministerios' });
+    console.error('Error getting instituciones:', error);
+    res.status(500).json({ error: 'Error al obtener instituciones' });
   }
 });
 
-// Get ministerio by ID
+// Get institucion by ID
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const id = getId(req);
@@ -35,47 +35,42 @@ router.get('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'ID inválido' });
     }
     
-    const ministry = await prisma.ministerio.findUnique({
-      where: { id_ministerio: id },
+    const institucion = await prisma.institucion.findUnique({
+      where: { id_institucion: id },
       include: {
         congregacion: true,
         estado: true,
-        miembros: true,
-        cargos: {
+        miembroInstitucions: {
           include: { miembro: true, estado: true }
-        },
-        comunicaciones: true,
-        prestamos: {
-          include: { item: true, estado: true }
         }
       }
     });
 
-    if (!ministry) {
-      return res.status(404).json({ error: 'Ministerio no encontrado' });
+    if (!institucion) {
+      return res.status(404).json({ error: 'Institución no encontrada' });
     }
 
-    res.json(ministry);
+    res.json(institucion);
   } catch (error) {
-    console.error('Error getting ministry:', error);
-    res.status(500).json({ error: 'Error al obtener ministerio' });
+    console.error('Error getting institucion:', error);
+    res.status(500).json({ error: 'Error al obtener institución' });
   }
 });
 
-// Create ministerio
+// Create institucion
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { nombre, descripcion, id_lider, id_congregacion, id_estado } = req.body;
+    const { nombre, tipo, descripcion, id_congregacion, id_estado } = req.body;
 
     if (!nombre || !id_congregacion || !id_estado) {
       return res.status(400).json({ error: 'Faltan campos requeridos' });
     }
 
-    const newMinisterio = await prisma.ministerio.create({
+    const newInstitucion = await prisma.institucion.create({
       data: {
         nombre,
+        tipo,
         descripcion,
-        id_lider,
         id_congregacion,
         id_estado
       },
@@ -85,14 +80,14 @@ router.post('/', async (req: Request, res: Response) => {
       }
     });
 
-    res.status(201).json(newMinisterio);
+    res.status(201).json(newInstitucion);
   } catch (error) {
-    console.error('Error creating ministry:', error);
-    res.status(500).json({ error: 'Error al crear ministerio' });
+    console.error('Error creating institucion:', error);
+    res.status(500).json({ error: 'Error al crear institución' });
   }
 });
 
-// Update ministerio
+// Update institucion
 router.put('/:id', async (req: Request, res: Response) => {
   try {
     const id = getId(req);
@@ -101,12 +96,12 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     
     const updateData = { ...req.body };
-    delete updateData.id_ministerio;
+    delete updateData.id_institucion;
     delete updateData.created_at;
     delete updateData.updated_at;
 
-    const updatedMinisterio = await prisma.ministerio.update({
-      where: { id_ministerio: id },
+    const updatedInstitucion = await prisma.institucion.update({
+      where: { id_institucion: id },
       data: updateData,
       include: {
         congregacion: true,
@@ -114,14 +109,14 @@ router.put('/:id', async (req: Request, res: Response) => {
       }
     });
 
-    res.json(updatedMinisterio);
+    res.json(updatedInstitucion);
   } catch (error) {
-    console.error('Error updating ministry:', error);
-    res.status(500).json({ error: 'Error al actualizar ministerio' });
+    console.error('Error updating institucion:', error);
+    res.status(500).json({ error: 'Error al actualizar institución' });
   }
 });
 
-// Delete ministerio
+// Delete institucion
 router.delete('/:id', async (req: Request, res: Response) => {
   try {
     const id = getId(req);
@@ -129,35 +124,31 @@ router.delete('/:id', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'ID inválido' });
     }
     
-    await prisma.ministerio.delete({
-      where: { id_ministerio: id }
+    await prisma.institucion.delete({
+      where: { id_institucion: id }
     });
 
-    res.json({ message: 'Ministerio eliminado correctamente' });
+    res.json({ message: 'Institución eliminada correctamente' });
   } catch (error) {
-    console.error('Error deleting ministry:', error);
-    res.status(500).json({ error: 'Error al eliminar ministerio' });
+    console.error('Error deleting institucion:', error);
+    res.status(500).json({ error: 'Error al eliminar institución' });
   }
 });
 
-// Get metadata for ministry form
+// Get metadata for institucion form
 router.get('/meta', async (req: Request, res: Response) => {
   try {
-    const [estados, congregaciones, miembros] = await Promise.all([
+    const [estados, congregaciones] = await Promise.all([
       prisma.estado.findMany({
-        where: { entidad: 'MINISTERIO' },
+        where: { entidad: 'INSTITUCION' },
         orderBy: { nombre: 'asc' }
       }),
       prisma.congregacion.findMany({
         include: { estado: true },
         orderBy: { nombre: 'asc' }
-      }),
-      prisma.miembro.findMany({
-        where: { id_estado: 1 }, // Solo activos
-        orderBy: { nombres: 'asc' }
       })
     ]);
-    res.json({ estados, congregaciones, miembros });
+    res.json({ estados, congregaciones });
   } catch (error) {
     console.error('Get metadata error:', error);
     res.status(500).json({ error: 'Error al obtener metadatos' });

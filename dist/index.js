@@ -13,6 +13,11 @@ const auth_1 = __importDefault(require("./routes/auth"));
 const miembros_1 = __importDefault(require("./routes/miembros"));
 const ministerios_1 = __importDefault(require("./routes/ministerios"));
 const congregaciones_1 = __importDefault(require("./routes/congregaciones"));
+const eventos_1 = __importDefault(require("./routes/eventos"));
+const finanzas_1 = __importDefault(require("./routes/finanzas"));
+const usuarios_1 = __importDefault(require("./routes/usuarios"));
+const inventario_1 = __importDefault(require("./routes/inventario"));
+const instituciones_1 = __importDefault(require("./routes/instituciones"));
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 // Middleware
@@ -24,6 +29,11 @@ app.use('/api/auth', auth_1.default);
 app.use('/api/miembros', miembros_1.default);
 app.use('/api/ministerios', ministerios_1.default);
 app.use('/api/congregaciones', congregaciones_1.default);
+app.use('/api/eventos', eventos_1.default);
+app.use('/api/finanzas', finanzas_1.default);
+app.use('/api/usuarios', usuarios_1.default);
+app.use('/api/inventario', inventario_1.default);
+app.use('/api/instituciones', instituciones_1.default);
 // Health check
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
