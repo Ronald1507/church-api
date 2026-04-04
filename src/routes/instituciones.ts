@@ -19,8 +19,8 @@ const getNumericId = (param: string | string[]): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get metadata for institucion form - MUST BE BEFORE /:id
-router.get('/meta', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
+// Get options for institucion form - MUST BE BEFORE /:id
+router.get('/opciones', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     let congregacionFilter = {};
     const { nivel } = req.user || {};

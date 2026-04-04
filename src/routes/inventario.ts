@@ -19,10 +19,10 @@ const getNumericId = (param: string | string[]): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// ==================== METADATA - MUST BE BEFORE /:id ====================
+// ==================== OPCIONES - MUST BE BEFORE /:id ====================
 
-// Get metadata for inventory forms
-router.get('/meta', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
+// Get options for inventory forms
+router.get('/opciones', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     let congregacionFilter = {};
     const { nivel } = req.user || {};

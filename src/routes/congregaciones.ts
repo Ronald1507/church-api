@@ -19,8 +19,8 @@ const getNumericId = (param: string | string[]): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get metadata for congregacion form - MUST BE BEFORE /:id - Solo SuperAdmin
-router.get('/meta', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
+// Get options for congregacion form - MUST BE BEFORE /:id - Solo SuperAdmin
+router.get('/opciones', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
   try {
     const estados = await prisma.estado.findMany({
       where: { entidad: 'CONGREGACION' },

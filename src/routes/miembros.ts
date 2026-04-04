@@ -25,7 +25,7 @@ const getNumericId = (param: string | string[]): number | null => {
 
 // Get member types
 router.get(
-	"/meta/tipos",
+	"/opciones/tipos",
 	authenticateToken,
 	requirePermission("miembros", "leer"),
 	async (req: AuthRequest, res: Response) => {

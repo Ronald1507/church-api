@@ -19,10 +19,10 @@ const getNumericId = (param: string | string[]): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// ==================== METADATA - MUST BE BEFORE OTHER ROUTES ====================
+// ==================== OPCIONES - MUST BE BEFORE OTHER ROUTES ====================
 
-// Get metadata for finance forms
-router.get('/meta', authenticateToken, requirePermission('finanzas', 'leer'), async (req: AuthRequest, res: Response) => {
+// Get options for finance forms
+router.get('/opciones', authenticateToken, requirePermission('finanzas', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     let congregacionFilter = {};
     const { nivel } = req.user || {};

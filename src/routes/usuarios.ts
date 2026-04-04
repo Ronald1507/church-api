@@ -20,8 +20,8 @@ const getNumericId = (param: string | string[]): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get metadata for user form - MUST BE BEFORE /:id
-router.get('/meta', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+// Get options for user form - MUST BE BEFORE /:id
+router.get('/opciones', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
 
   try {
     const [roles, estados, miembros, congregaciones] = await Promise.all([
