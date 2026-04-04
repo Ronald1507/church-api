@@ -12,6 +12,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Helper to get numeric ID from any param
+const getNumericId = (param: string | string[]): number | null => {
+  const value = Array.isArray(param) ? param[0] : param;
+  const num = parseInt(value);
+  return isNaN(num) ? null : num;
+};
+
 // ==================== METADATA - MUST BE BEFORE /:id ====================
 
 // Get metadata for inventory forms
@@ -61,6 +68,34 @@ router.get('/', authenticateToken, requirePermission('inventario', 'leer'), asyn
     res.json(items);
   } catch (error) {
     console.error('Error getting items:', error);
+    res.status(500).json({ error: 'Error al obtener items' });
+  }
+});
+
+// Get items by estado - dinámico
+router.get('/estado/:idEstado', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const idEstado = getNumericId(req.params.idEstado);
+    if (idEstado === null) {
+      return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const items = await prisma.inventarioItem.findMany({
+      where: {
+        ...congregacionFilter,
+        id_estado: idEstado
+      },
+      include: {
+        congregacion: true,
+        estado: true
+      },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json(items);
+  } catch (error) {
+    console.error('Error getting items by estado:', error);
     res.status(500).json({ error: 'Error al obtener items' });
   }
 });

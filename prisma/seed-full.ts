@@ -48,6 +48,7 @@ const ENTIDADES_ESTADO: Record<string, Array<{codigo: string; nombre: string; de
   MIEMBRO: [
     { codigo: 'ACTIVO', nombre: 'Miembro activo', descripcion: 'Miembro activo en la iglesia' },
     { codigo: 'INACTIVO', nombre: 'Miembro inactivo', descripcion: 'Miembro inactivo' },
+    { codigo: 'ELIMINADO', nombre: 'Eliminado', descripcion: 'Miembro eliminado del sistema', es_final: true },
     { codigo: 'TRANSFERIDO', nombre: 'Transferido', descripcion: 'Miembro transferido a otra iglesia', es_final: true }
   ],
   INSTITUCION: [

@@ -12,6 +12,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Helper to get numeric ID from any param
+const getNumericId = (param: string | string[]): number | null => {
+  const value = Array.isArray(param) ? param[0] : param;
+  const num = parseInt(value);
+  return isNaN(num) ? null : num;
+};
+
 // Get metadata for institucion form - MUST BE BEFORE /:id
 router.get('/meta', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
@@ -52,15 +59,14 @@ router.get('/meta', authenticateToken, requirePermission('instituciones', 'leer'
   }
 });
 
-// Get all instituciones - filtrado por congregación y solo activas
+// Get all instituciones - filtrado por congregación
 router.get('/', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const congregacionFilter = getCongregacionFilter(req.user);
     
     const instituciones = await prisma.institucion.findMany({
       where: {
-        ...congregacionFilter,
-        id_estado: 8 // Solo instituciones activas
+        ...congregacionFilter
       },
       include: {
         congregacion: true,
@@ -75,7 +81,35 @@ router.get('/', authenticateToken, requirePermission('instituciones', 'leer'), a
   }
 });
 
-// Get institucion by ID - filtrado por congregación
+// Get instituciones by estado - dinámico (ANTES de /:id)
+router.get('/estado/:idEstado', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const idEstado = getNumericId(req.params.idEstado);
+    if (idEstado === null) {
+      return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const instituciones = await prisma.institucion.findMany({
+      where: {
+        ...congregacionFilter,
+        id_estado: idEstado
+      },
+      include: {
+        congregacion: true,
+        estado: true
+      },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json(instituciones);
+  } catch (error) {
+    console.error('Error getting instituciones by estado:', error);
+    res.status(500).json({ error: 'Error al obtener instituciones' });
+  }
+});
+
+// Get institucion by ID - DEBE SER ÚLTIMO
 router.get('/:id', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);

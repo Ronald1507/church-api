@@ -23,7 +23,28 @@ const PORT = process.env.PORT || 3000;
 app.use((0, cors_1.default)());
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: true }));
-// Rutas
+// API directa para miembros inactivos - SE DEBE COLOCAR ANTES del router de miembros
+// porque Express匹配路由顺序
+app.get("/api/miembros-inactivos", async (req, res) => {
+    try {
+        console.log("=== /api/miembros-inactivos called ===");
+        const miembros = await db_1.default.miembro.findMany({
+            where: { id_estado: 6 }, // Solo inactivos
+            take: 100,
+            include: {
+                estado: true,
+                congregacion: true,
+                tipoMiembro: true
+            }
+        });
+        res.json(miembros);
+    }
+    catch (error) {
+        console.error("Error getting inactive members:", error);
+        res.status(500).json({ error: "Error al obtener miembros inactivos" });
+    }
+});
+// Rutas - IMPORTANTE: miembroRoutes debe ir DESPUÉS de las rutas específicas
 app.use("/api/auth", auth_1.default);
 app.use("/api/miembros", miembros_1.default);
 app.use("/api/congregaciones", congregaciones_1.default);
@@ -40,6 +61,26 @@ app.get("/health", (req, res) => {
 app.get("/debug/miembros", (req, res) => {
     console.log("=== DEBUG /debug/miembros called ===");
     res.json({ message: "DEBUG route works" });
+});
+// API directa para miembros inactivos - sin /api/ para evitar conflicto con router
+app.get("/debug/miembros-inactivos", async (req, res) => {
+    try {
+        console.log("=== /debug/miembros-inactivos called ===");
+        const miembros = await db_1.default.miembro.findMany({
+            where: { id_estado: 6 }, // Solo inactivos
+            take: 100,
+            include: {
+                estado: true,
+                congregacion: true,
+                tipoMiembro: true
+            }
+        });
+        res.json(miembros);
+    }
+    catch (error) {
+        console.error("Error getting inactive members:", error);
+        res.status(500).json({ error: "Error al obtener miembros inactivos" });
+    }
 });
 // Error handling middleware
 app.use((err, req, res, next) => {

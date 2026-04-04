@@ -70,8 +70,10 @@ router.get("/opciones", auth_1.authenticateToken, (0, permissions_1.requirePermi
 // Get all members - solo activos por defecto
 router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
+        console.log("[GET /miembros] Request received");
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const includeInactivos = req.query.inactivos === 'true';
+        console.log("[GET /miembros] includeInactivos:", includeInactivos);
         const miembros = await db_1.default.miembro.findMany({
             where: {
                 ...congregacionFilter,
@@ -84,6 +86,34 @@ router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("
                 tipoMiembro: true
             }
         });
+        console.log("[GET /miembros] Found:", miembros.length, "members");
+        res.json(miembros);
+    }
+    catch (error) {
+        console.error("Error getting miembros:", error);
+        res.status(500).json({ error: "Error al obtener miembros" });
+    }
+});
+// Get all members - solo activos por defecto
+router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
+    try {
+        console.log("[GET /miembros] Request received");
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const includeInactivos = req.query.inactivos === 'true';
+        console.log("[GET /miembros] includeInactivos:", includeInactivos);
+        const miembros = await db_1.default.miembro.findMany({
+            where: {
+                ...congregacionFilter,
+                ...(includeInactivos ? {} : { id_estado: 5 }) // Solo activos si no se pide inactivos
+            },
+            take: 100,
+            include: {
+                estado: true,
+                congregacion: true,
+                tipoMiembro: true
+            }
+        });
+        console.log("[GET /miembros] Found:", miembros.length, "members");
         res.json(miembros);
     }
     catch (error) {
@@ -94,6 +124,7 @@ router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("
 // Get all members including inactivos - solo inactivos (estado 6)
 router.get("/todos", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
+        console.log("[GET /miembros/todos] Request received");
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const miembros = await db_1.default.miembro.findMany({
             where: {
@@ -107,6 +138,7 @@ router.get("/todos", auth_1.authenticateToken, (0, permissions_1.requirePermissi
                 tipoMiembro: true
             }
         });
+        console.log("[GET /miembros/todos] Found:", miembros.length, "inactive members");
         res.json(miembros);
     }
     catch (error) {
@@ -288,12 +320,18 @@ router.delete("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermiss
         if (!existingMiembro) {
             return res.status(404).json({ error: "Miembro no encontrado" });
         }
-        // Eliminación lógica: cambiar estado a Inactivo
+        // Eliminación lógica: cambiar estado a Eliminado (buscar el estado correcto de la DB)
+        const estadoEliminado = await db_1.default.estado.findFirst({
+            where: {
+                entidad: 'MIEMBRO',
+                codigo: 'ELIMINADO'
+            }
+        });
         await db_1.default.miembro.update({
             where: { id_miembro: memberId },
-            data: { id_estado: 6 } // ID de estado Inactivo para MIEMBRO
+            data: { id_estado: estadoEliminado?.id_estado || 7 } // ID 7 = Eliminado, o el que venga de DB
         });
-        res.json({ message: "Miembro eliminado (inactivo)" });
+        res.json({ message: "Miembro eliminado" });
     }
     catch (error) {
         console.error("Delete miembro error:", error);

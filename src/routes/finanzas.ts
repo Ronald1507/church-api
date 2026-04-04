@@ -12,6 +12,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Helper to get numeric ID from any param
+const getNumericId = (param: string | string[]): number | null => {
+  const value = Array.isArray(param) ? param[0] : param;
+  const num = parseInt(value);
+  return isNaN(num) ? null : num;
+};
+
 // ==================== METADATA - MUST BE BEFORE OTHER ROUTES ====================
 
 // Get metadata for finance forms
@@ -61,6 +68,34 @@ router.get('/cuentas', authenticateToken, requirePermission('finanzas', 'leer'),
     res.json(cuentas);
   } catch (error) {
     console.error('Error getting cuentas:', error);
+    res.status(500).json({ error: 'Error al obtener cuentas' });
+  }
+});
+
+// Get cuentas by estado - dinámico
+router.get('/cuentas/estado/:idEstado', authenticateToken, requirePermission('finanzas', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const idEstado = getNumericId(req.params.idEstado);
+    if (idEstado === null) {
+      return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const cuentas = await prisma.finanzaCuenta.findMany({
+      where: {
+        ...congregacionFilter,
+        id_estado: idEstado
+      },
+      include: {
+        congregacion: true,
+        estado: true
+      },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json(cuentas);
+  } catch (error) {
+    console.error('Error getting cuentas by estado:', error);
     res.status(500).json({ error: 'Error al obtener cuentas' });
   }
 });

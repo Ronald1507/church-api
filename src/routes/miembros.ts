@@ -13,8 +13,13 @@ const router = Router();
 
 // Helper to get numeric ID from params
 const getId = (req: Request): number | null => {
-	const id = req.params.id;
-	const num = typeof id === "string" ? parseInt(id) : parseInt(id?.[0] || "");
+	return getNumericId(req.params.id);
+};
+
+// Helper to get numeric ID from any param
+const getNumericId = (param: string | string[]): number | null => {
+	const value = Array.isArray(param) ? param[0] : param;
+	const num = parseInt(value);
 	return isNaN(num) ? null : num;
 };
 
@@ -83,19 +88,14 @@ router.get(
 	},
 );
 
-// Get all members - solo activos por defecto
+// Get all members - retorna todos los miembros
 router.get("/", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
 	try {
-		console.log("[GET /miembros] Request received");
 		const congregacionFilter = getCongregacionFilter(req.user);
-		const includeInactivos = req.query.inactivos === 'true';
-		
-		console.log("[GET /miembros] includeInactivos:", includeInactivos);
 		
 		const miembros = await prisma.miembro.findMany({ 
 			where: {
-				...congregacionFilter,
-				...(includeInactivos ? {} : { id_estado: 5 }) // Solo activos si no se pide inactivos
+				...congregacionFilter
 			},
 			take: 100,
 			include: {
@@ -104,7 +104,6 @@ router.get("/", authenticateToken, requirePermission("miembros", "leer"), async 
 				tipoMiembro: true
 			}
 		});
-		console.log("[GET /miembros] Found:", miembros.length, "members");
 		res.json(miembros);
 	} catch (error) {
 		console.error("Error getting miembros:", error);
@@ -112,19 +111,19 @@ router.get("/", authenticateToken, requirePermission("miembros", "leer"), async 
 	}
 });
 
-// Get all members - solo activos por defecto
-router.get("/", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
+// Get members by estado - dinámico
+router.get("/estado/:idEstado", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
 	try {
-		console.log("[GET /miembros] Request received");
+		const idEstado = getNumericId(req.params.idEstado);
+		if (idEstado === null) {
+			return res.status(400).json({ error: "ID de estado inválido" });
+		}
+		
 		const congregacionFilter = getCongregacionFilter(req.user);
-		const includeInactivos = req.query.inactivos === 'true';
-		
-		console.log("[GET /miembros] includeInactivos:", includeInactivos);
-		
 		const miembros = await prisma.miembro.findMany({ 
 			where: {
 				...congregacionFilter,
-				...(includeInactivos ? {} : { id_estado: 5 }) // Solo activos si no se pide inactivos
+				id_estado: idEstado
 			},
 			take: 100,
 			include: {
@@ -133,35 +132,9 @@ router.get("/", authenticateToken, requirePermission("miembros", "leer"), async 
 				tipoMiembro: true
 			}
 		});
-		console.log("[GET /miembros] Found:", miembros.length, "members");
 		res.json(miembros);
 	} catch (error) {
-		console.error("Error getting miembros:", error);
-		res.status(500).json({ error: "Error al obtener miembros" });
-	}
-});
-
-// Get all members including inactivos - solo inactivos (estado 6)
-router.get("/todos", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
-	try {
-		console.log("[GET /miembros/todos] Request received");
-		const congregacionFilter = getCongregacionFilter(req.user);
-		const miembros = await prisma.miembro.findMany({ 
-			where: {
-				...congregacionFilter,
-				id_estado: 6 // Solo inactivos
-			},
-			take: 100,
-			include: {
-				estado: true,
-				congregacion: true,
-				tipoMiembro: true
-			}
-		});
-		console.log("[GET /miembros/todos] Found:", miembros.length, "inactive members");
-		res.json(miembros);
-	} catch (error) {
-		console.error("Error getting todos los miembros:", error);
+		console.error("Error getting members by estado:", error);
 		res.status(500).json({ error: "Error al obtener miembros" });
 	}
 });
@@ -376,6 +349,7 @@ router.delete(
 	requirePermission("miembros", "eliminar"),
 	async (req: AuthRequest, res: Response) => {
 		try {
+			console.log(">>> DELETE /:id reached with params:", req.params);
 			const memberId = getId(req);
 			if (memberId === null) {
 				return res
@@ -397,13 +371,14 @@ router.delete(
 				return res.status(404).json({ error: "Miembro no encontrado" });
 			}
 
-			// Eliminación lógica: cambiar estado a Inactivo
+			console.log(">>> DELETE: Changing estado to 21 for member:", memberId);
+			// Eliminación lógica: cambiar estado a Eliminado (estado 21)
 			await prisma.miembro.update({
 				where: { id_miembro: memberId },
-				data: { id_estado: 6 } // ID de estado Inactivo para MIEMBRO
+				data: { id_estado: 21 } // ID 21 = Eliminado
 			});
 
-			res.json({ message: "Miembro eliminado (inactivo)" });
+			res.json({ message: "Miembro eliminado" });
 		} catch (error) {
 			console.error("Delete miembro error:", error);
 			res.status(500).json({ error: "Error al eliminar miembro" });

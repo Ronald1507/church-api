@@ -12,6 +12,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Helper to get numeric ID from any param
+const getNumericId = (param: string | string[]): number | null => {
+  const value = Array.isArray(param) ? param[0] : param;
+  const num = parseInt(value);
+  return isNaN(num) ? null : num;
+};
+
 // Get metadata for evento form - MUST BE BEFORE /:id
 router.get('/meta', authenticateToken, requirePermission('eventos', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
@@ -57,6 +64,34 @@ router.get('/', authenticateToken, requirePermission('eventos', 'leer'), async (
     res.json(eventos);
   } catch (error) {
     console.error('Error getting eventos:', error);
+    res.status(500).json({ error: 'Error al obtener eventos' });
+  }
+});
+
+// Get eventos by estado - dinámico
+router.get('/estado/:idEstado', authenticateToken, requirePermission('eventos', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const idEstado = getNumericId(req.params.idEstado);
+    if (idEstado === null) {
+      return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const eventos = await prisma.evento.findMany({
+      where: {
+        ...congregacionFilter,
+        id_estado: idEstado
+      },
+      include: {
+        congregacion: true,
+        estado: true
+      },
+      orderBy: { fecha_inicio: 'desc' }
+    });
+    res.json(eventos);
+  } catch (error) {
+    console.error('Error getting eventos by estado:', error);
     res.status(500).json({ error: 'Error al obtener eventos' });
   }
 });

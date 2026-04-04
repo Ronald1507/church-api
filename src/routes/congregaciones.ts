@@ -12,6 +12,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Helper to get numeric ID from any param
+const getNumericId = (param: string | string[]): number | null => {
+  const value = Array.isArray(param) ? param[0] : param;
+  const num = parseInt(value);
+  return isNaN(num) ? null : num;
+};
+
 // Get metadata for congregacion form - MUST BE BEFORE /:id - Solo SuperAdmin
 router.get('/meta', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
   try {
@@ -52,6 +59,40 @@ router.get('/', authenticateToken, requirePermission('configuracion', 'leer'), a
     res.json(congregaciones);
   } catch (error) {
     console.error('Error getting congregaciones:', error);
+    res.status(500).json({ error: 'Error al obtener congregaciones' });
+  }
+});
+
+// Get congregaciones by estado - dinámico
+router.get('/estado/:idEstado', authenticateToken, requirePermission('configuracion', 'leer'), async (req: AuthRequest, res: Response) => {
+  const { nivel, id_congregacion } = req.user || {};
+  
+  const idEstado = getNumericId(req.params.idEstado);
+  if (idEstado === null) {
+    return res.status(400).json({ error: 'ID de estado inválido' });
+  }
+
+  // Solo SuperAdmin puede ver todas las congregaciones
+  if (nivel !== 'SUPERADMIN') {
+    if (nivel === 'ADMIN' && id_congregacion) {
+      const congregacion = await prisma.congregacion.findUnique({
+        where: { id_congregacion, id_estado: idEstado },
+        include: { estado: true }
+      });
+      return res.json(congregacion ? [congregacion] : []);
+    }
+    return res.json([]);
+  }
+
+  try {
+    const congregaciones = await prisma.congregacion.findMany({
+      where: { id_estado: idEstado },
+      include: { estado: true },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json(congregaciones);
+  } catch (error) {
+    console.error('Error getting congregaciones by estado:', error);
     res.status(500).json({ error: 'Error al obtener congregaciones' });
   }
 });

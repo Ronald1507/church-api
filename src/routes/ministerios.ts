@@ -12,6 +12,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Helper to get numeric ID from any param
+const getNumericId = (param: string | string[]): number | null => {
+  const value = Array.isArray(param) ? param[0] : param;
+  const num = parseInt(value);
+  return isNaN(num) ? null : num;
+};
+
 // Get metadata for ministry form - MUST BE BEFORE /:id
 router.get('/meta', authenticateToken, requirePermission('ministerios', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
@@ -64,6 +71,34 @@ router.get('/', authenticateToken, requirePermission('ministerios', 'leer'), asy
     res.json(ministerios);
   } catch (error) {
     console.error('Error getting ministerios:', error);
+    res.status(500).json({ error: 'Error al obtener ministerios' });
+  }
+});
+
+// Get ministerios by estado - dinámico
+router.get('/estado/:idEstado', authenticateToken, requirePermission('ministerios', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const idEstado = getNumericId(req.params.idEstado);
+    if (idEstado === null) {
+      return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    
+    const congregacionFilter = getCongregacionFilter(req.user);
+    
+    const ministerios = await prisma.ministerio.findMany({
+      where: {
+        ...congregacionFilter,
+        id_estado: idEstado
+      },
+      include: {
+        congregacion: true,
+        estado: true
+      },
+      orderBy: { nombre: 'asc' }
+    });
+    res.json(ministerios);
+  } catch (error) {
+    console.error('Error getting ministerios by estado:', error);
     res.status(500).json({ error: 'Error al obtener ministerios' });
   }
 });

@@ -13,6 +13,13 @@ const getId = (req: Request): number | null => {
   return isNaN(num) ? null : num;
 };
 
+// Helper to get numeric ID from any param
+const getNumericId = (param: string | string[]): number | null => {
+  const value = Array.isArray(param) ? param[0] : param;
+  const num = parseInt(value);
+  return isNaN(num) ? null : num;
+};
+
 // Get metadata for user form - MUST BE BEFORE /:id
 router.get('/meta', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
 
@@ -45,9 +52,15 @@ router.get('/meta', authenticateToken, requirePermission('usuarios', 'leer'), as
 router.get('/', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
   const { nivel, id_congregacion } = req.user || {};
 
-  const where = nivel === 'SUPERADMIN'
+  // Si no es SuperAdmin, filtrar por congregación
+  const where = nivel === 'SUPERADMIN' 
     ? {} 
-    : { id_congregacion };
+    : { id_congregacion: id_congregacion || undefined };
+
+  // Si es Admin pero no tiene congregación, no puede ver usuarios
+  if (nivel === 'ADMIN' && !id_congregacion) {
+    return res.json([]);
+  }
 
   try {
     const usuarios = await prisma.usuarioSistema.findMany({
@@ -55,14 +68,50 @@ router.get('/', authenticateToken, requirePermission('usuarios', 'leer'), async 
       include: {
         rol: true,
         estado: true,
-        congregacion: true,
-        miembro: true
+        congregacion: true
+        // NOTA: miembro no tiene relación en schema, se elimina
       },
       orderBy: { username: 'asc' }
     });
     res.json(usuarios);
   } catch (error) {
     console.error('Error getting usuarios:', error);
+    res.status(500).json({ error: 'Error al obtener usuarios' });
+  }
+});
+
+// Get users by estado - dinámico
+router.get('/estado/:idEstado', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+  const { nivel, id_congregacion } = req.user || {};
+  
+  const idEstado = getNumericId(req.params.idEstado);
+  if (idEstado === null) {
+    return res.status(400).json({ error: 'ID de estado inválido' });
+  }
+
+  // Si no es SuperAdmin, filtrar por congregación
+  if (nivel === 'ADMIN' && !id_congregacion) {
+    return res.json([]);
+  }
+
+  const usersWhere = nivel === 'SUPERADMIN'
+    ? { id_estado: idEstado } 
+    : { id_congregacion: id_congregacion || undefined, id_estado: idEstado };
+  
+  try {
+    const usuarios = await prisma.usuarioSistema.findMany({
+      where: usersWhere,
+      include: {
+        rol: true,
+        estado: true,
+        congregacion: true
+        // NOTA: miembro no tiene relación en schema
+      },
+      orderBy: { username: 'asc' }
+    });
+    res.json(usuarios);
+  } catch (error) {
+    console.error('Error getting usuarios by estado:', error);
     res.status(500).json({ error: 'Error al obtener usuarios' });
   }
 });
@@ -81,8 +130,8 @@ router.get('/:id', authenticateToken, requirePermission('usuarios', 'leer'), asy
       include: {
         rol: true,
         estado: true,
-        congregacion: true,
-        miembro: true
+        congregacion: true
+        // NOTA: miembro no tiene relación en schema
       }
     });
 
