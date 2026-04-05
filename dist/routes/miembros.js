@@ -153,7 +153,7 @@ router.get("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
                 miembroInstitucions: {
                     include: {
                         institucion: true,
-                        cargoInstitucion: true
+                        estado: true
                     },
                 },
                 relacionesOrigen: {
@@ -165,12 +165,18 @@ router.get("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
                 historialEspirituals: {
                     include: { tipoHito: true },
                 },
-                visitaPastorals: true,
-                peticionOraciones: true,
+                visitaPastorals: {
+                    include: { pastor: true, estado: true }
+                },
+                peticionOraciones: {
+                    include: { estado: true }
+                },
                 asistenciaEventos: {
                     include: { evento: true },
                 },
-                documentos: true,
+                documentos: {
+                    include: { estado: true }
+                },
                 ofrendaDizmos: true,
             },
         });
@@ -187,46 +193,43 @@ router.get("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
 // Create member
 router.post("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "crear"), async (req, res) => {
     try {
-        const { nombres, apellidos, fecha_nacimiento, genero, estado_civil, rut, telefono, email, direccion, foto_url, id_estado, id_congregacion, id_tipo_miembro, } = req.body;
-        if (!nombres || !apellidos || !id_estado || !id_tipo_miembro) {
-            return res
-                .status(400)
-                .json({ error: "Faltan campos requeridos" });
-        }
-        // Si no es admin, forzar la congregación del usuario
-        let congregacionId = id_congregacion;
         const { nivel } = req.user || {};
-        if (nivel !== "ADMIN" && req.user?.id_congregacion) {
-            congregacionId = req.user.id_congregacion;
+        const input = req.body;
+        // Validar campos requeridos
+        if (!input.nombres || !input.apellidos || !input.id_estado || !input.id_tipo_miembro) {
+            return res.status(400).json({ error: "Faltan campos requeridos" });
         }
-        if (!congregacionId) {
-            return res
-                .status(400)
-                .json({ error: "Debe especificar una congregación" });
+        // Determinar congregación
+        let id_congregacion;
+        if (nivel === "ADMIN" && input.id_congregacion) {
+            id_congregacion = parseInt(String(input.id_congregacion));
+        }
+        else if (req.user?.id_congregacion) {
+            id_congregacion = req.user.id_congregacion;
+        }
+        else {
+            return res.status(400).json({ error: "Debe especificar una congregación" });
+        }
+        if (isNaN(id_congregacion)) {
+            return res.status(400).json({ error: "ID de congregación inválido" });
         }
         const newMiembro = await db_1.default.miembro.create({
             data: {
-                nombres,
-                apellidos,
-                fecha_nacimiento: fecha_nacimiento
-                    ? new Date(fecha_nacimiento)
-                    : null,
-                genero,
-                estado_civil,
-                rut,
-                telefono,
-                email,
-                direccion,
-                foto_url,
-                id_estado,
-                id_congregacion: congregacionId,
-                id_tipo_miembro,
+                nombres: input.nombres,
+                apellidos: input.apellidos,
+                fecha_nacimiento: input.fecha_nacimiento ? new Date(input.fecha_nacimiento) : null,
+                genero: input.genero || null,
+                estado_civil: input.estado_civil || null,
+                rut: input.rut || null,
+                telefono: input.telefono || null,
+                email: input.email || null,
+                direccion: input.direccion || null,
+                foto_url: input.foto_url || null,
+                id_estado: parseInt(String(input.id_estado)),
+                id_congregacion,
+                id_tipo_miembro: parseInt(String(input.id_tipo_miembro)),
             },
-            include: {
-                estado: true,
-                congregacion: true,
-                tipoMiembro: true,
-            },
+            include: { estado: true, congregacion: true, tipoMiembro: true },
         });
         res.status(201).json(newMiembro);
     }
@@ -240,43 +243,69 @@ router.put("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
     try {
         const memberId = getId(req);
         if (memberId === null) {
-            return res
-                .status(400)
-                .json({ error: "ID de miembro inválido" });
+            return res.status(400).json({ error: "ID de miembro inválido" });
         }
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
-        // Verificar que el miembro pertenezca a la congregación del usuario
         const existingMiembro = await db_1.default.miembro.findFirst({
-            where: {
-                id_miembro: memberId,
-                ...congregacionFilter,
-            },
+            where: { id_miembro: memberId, ...congregacionFilter },
         });
         if (!existingMiembro) {
             return res.status(404).json({ error: "Miembro no encontrado" });
         }
-        const updateData = { ...req.body };
-        // Remove non-database fields
-        delete updateData.id_miembro;
-        delete updateData.created_at;
-        delete updateData.updated_at;
-        // Convert fecha_nacimiento if present
-        if (updateData.fecha_nacimiento) {
-            updateData.fecha_nacimiento = new Date(updateData.fecha_nacimiento);
+        const input = req.body;
+        // Campos válidos del modelo Miembro (sin relaciones, sin campos del sistema)
+        const allowedFields = [
+            'nombres', 'apellidos', 'fecha_nacimiento', 'genero',
+            'estado_civil', 'rut', 'telefono', 'email', 'direccion',
+            'foto_url', 'id_estado', 'id_congregacion', 'id_tipo_miembro'
+        ];
+        // Construir objeto de update solo con campos válidos
+        const updateData = {};
+        for (const field of allowedFields) {
+            if (field in input) {
+                const value = input[field];
+                // Campos que deben ser parseados a número
+                if (['id_estado', 'id_congregacion', 'id_tipo_miembro'].includes(field)) {
+                    if (value === '' || value === null || value === undefined) {
+                        updateData[field] = existingMiembro[field];
+                    }
+                    else {
+                        const parsed = parseInt(String(value));
+                        updateData[field] = isNaN(parsed)
+                            ? existingMiembro[field]
+                            : parsed;
+                    }
+                }
+                // Fecha de nacimiento
+                else if (field === 'fecha_nacimiento') {
+                    if (!value || value === '') {
+                        updateData[field] = existingMiembro.fecha_nacimiento;
+                    }
+                    else if (value === null || value === 'null') {
+                        updateData[field] = null;
+                    }
+                    else {
+                        updateData[field] = new Date(value);
+                    }
+                }
+                // Otros campos opcionales
+                else if (value === '' || value === undefined) {
+                    updateData[field] = existingMiembro[field] ?? null;
+                }
+                else {
+                    updateData[field] = value;
+                }
+            }
         }
         // Si no es admin, no permitir cambiar la congregación
         const { nivel } = req.user || {};
-        if (nivel !== "ADMIN" && updateData.id_congregacion) {
+        if (nivel !== "ADMIN") {
             delete updateData.id_congregacion;
         }
         const updatedMiembro = await db_1.default.miembro.update({
             where: { id_miembro: memberId },
             data: updateData,
-            include: {
-                estado: true,
-                congregacion: true,
-                tipoMiembro: true,
-            },
+            include: { estado: true, congregacion: true, tipoMiembro: true },
         });
         res.json(updatedMiembro);
     }
