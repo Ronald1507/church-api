@@ -8,6 +8,7 @@ dotenv_1.default.config();
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const db_1 = __importDefault(require("./config/db"));
+const response_1 = require("./utils/response");
 // Rutas
 const auth_1 = __importDefault(require("./routes/auth"));
 const miembros_1 = __importDefault(require("./routes/miembros"));
@@ -36,16 +37,18 @@ app.use("/api/instituciones", instituciones_1.default);
 app.use("/api/estados", estados_1.default);
 // Health check
 app.get("/health", (req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    res.json(response_1.ApiResponse.success({ status: "ok", timestamp: new Date().toISOString() }));
 });
 // Error handling middleware
 app.use((err, req, res, next) => {
     console.error("Error:", err.message);
-    res.status(500).json({ error: "Error interno del servidor" });
+    const response = response_1.ApiResponse.error("Error interno del servidor", err.message);
+    res.status(response.statusCode).json(response);
 });
-// 404 handler
+// 404 handler - usar ApiResponse
 app.use((req, res) => {
-    res.status(404).json({ error: "Ruta no encontrada" });
+    const response = response_1.ApiResponse.notFound("Ruta no encontrada");
+    res.status(response.statusCode).json(response);
 });
 async function main() {
     try {

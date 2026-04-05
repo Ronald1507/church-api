@@ -9,199 +9,115 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
 const estados_1 = require("../utils/estados");
+const response_1 = require("../utils/response");
 const router = (0, express_1.Router)();
-// Helper to get numeric ID from params
 const getId = (req) => {
     const id = req.params.id;
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Helper to get numeric ID from any param
 const getNumericId = (param) => {
     const value = Array.isArray(param) ? param[0] : param;
     const num = parseInt(value);
     return isNaN(num) ? null : num;
 };
-// Get options for user form - MUST BE BEFORE /:id
+// Opciones
 router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     try {
-        // Buscar estado activo dinámicamente para filtrar miembros
         const estadoActivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ACTIVO');
         const miembroFilter = estadoActivo ? { id_estado: estadoActivo.id_estado } : {};
         const [roles, estados, miembros, congregaciones] = await Promise.all([
-            db_1.default.rolSistema.findMany({
-                orderBy: { nombre: 'asc' }
-            }),
-            db_1.default.estado.findMany({
-                where: { entidad: 'USUARIO' },
-                orderBy: { nombre: 'asc' }
-            }),
-            db_1.default.miembro.findMany({
-                where: miembroFilter,
-                orderBy: { nombres: 'asc' }
-            }),
-            db_1.default.congregacion.findMany({
-                include: { estado: true },
-                orderBy: { nombre: 'asc' }
-            })
+            db_1.default.rolSistema.findMany({ orderBy: { nombre: 'asc' } }),
+            db_1.default.estado.findMany({ where: { entidad: 'USUARIO' }, orderBy: { nombre: 'asc' } }),
+            db_1.default.miembro.findMany({ where: miembroFilter, orderBy: { nombres: 'asc' } }),
+            db_1.default.congregacion.findMany({ include: { estado: true }, orderBy: { nombre: 'asc' } })
         ]);
-        res.json({ roles, estados, miembros, congregaciones });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success({ roles, estados, miembros, congregaciones }));
     }
     catch (error) {
-        console.error('Get metadata error:', error);
-        res.status(500).json({ error: 'Error al obtener metadatos' });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener metadatos', error));
     }
 });
-// Get all users - SuperAdmin ve todos, Admin ve solo los de su congregación
+// Get all users
 router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     const { nivel, id_congregacion } = req.user || {};
-    // Si no es SuperAdmin, filtrar por congregación
-    const where = nivel === 'SUPERADMIN'
-        ? {}
-        : { id_congregacion: id_congregacion || undefined };
-    // Si es Admin pero no tiene congregación, no puede ver usuarios
-    if (nivel === 'ADMIN' && !id_congregacion) {
-        return res.json([]);
-    }
+    const where = nivel === 'SUPERADMIN' ? {} : { id_congregacion: id_congregacion || undefined };
+    if (nivel === 'ADMIN' && !id_congregacion)
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success([]));
     try {
-        const usuarios = await db_1.default.usuarioSistema.findMany({
-            where,
-            include: {
-                rol: true,
-                estado: true,
-                congregacion: true
-                // NOTA: miembro no tiene relación en schema, se elimina
-            },
-            orderBy: { username: 'asc' }
-        });
-        res.json(usuarios);
+        const usuarios = await db_1.default.usuarioSistema.findMany({ where, include: { rol: true, estado: true, congregacion: true }, orderBy: { username: 'asc' } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(usuarios));
     }
     catch (error) {
-        console.error('Error getting usuarios:', error);
-        res.status(500).json({ error: 'Error al obtener usuarios' });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener usuarios', error));
     }
 });
-// Get users by estado - dinámico
+// Get users by estado
 router.get('/estado/:idEstado', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     const { nivel, id_congregacion } = req.user || {};
     const idEstado = getNumericId(req.params.idEstado);
-    if (idEstado === null) {
-        return res.status(400).json({ error: 'ID de estado inválido' });
-    }
-    // Validar que el estado pertenece a la entidad USUARIO
-    const estado = await db_1.default.estado.findUnique({
-        where: { id_estado: idEstado }
-    });
-    if (!estado) {
-        return res.status(404).json({ error: 'Estado no encontrado' });
-    }
-    if (estado.entidad !== 'USUARIO') {
-        return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad USUARIO` });
-    }
-    // Si no es SuperAdmin, filtrar por congregación
-    if (nivel === 'ADMIN' && !id_congregacion) {
-        return res.json([]);
-    }
-    const usersWhere = nivel === 'SUPERADMIN'
-        ? { id_estado: idEstado }
-        : { id_congregacion: id_congregacion || undefined, id_estado: idEstado };
+    if (idEstado === null)
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID de estado inválido'));
+    const estado = await db_1.default.estado.findUnique({ where: { id_estado: idEstado } });
+    if (!estado)
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.notFound('Estado no encontrado'));
+    if (estado.entidad !== 'USUARIO')
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('El estado no pertenece a USUARIO'));
+    if (nivel === 'ADMIN' && !id_congregacion)
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success([]));
+    const usersWhere = nivel === 'SUPERADMIN' ? { id_estado: idEstado } : { id_congregacion: id_congregacion || undefined, id_estado: idEstado };
     try {
-        const usuarios = await db_1.default.usuarioSistema.findMany({
-            where: usersWhere,
-            include: {
-                rol: true,
-                estado: true,
-                congregacion: true
-                // NOTA: miembro no tiene relación en schema
-            },
-            orderBy: { username: 'asc' }
-        });
-        res.json(usuarios);
+        const usuarios = await db_1.default.usuarioSistema.findMany({ where: usersWhere, include: { rol: true, estado: true, congregacion: true }, orderBy: { username: 'asc' } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(usuarios));
     }
     catch (error) {
-        console.error('Error getting usuarios by estado:', error);
-        res.status(500).json({ error: 'Error al obtener usuarios' });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener usuarios', error));
     }
 });
-// Get user by ID - Solo admin puede ver cualquier usuario
+// Get user by ID
 router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     try {
         const id = getId(req);
-        if (id === null) {
-            return res.status(400).json({ error: 'ID inválido' });
-        }
-        const usuario = await db_1.default.usuarioSistema.findUnique({
-            where: { id_usuario: id },
-            include: {
-                rol: true,
-                estado: true,
-                congregacion: true
-                // NOTA: miembro no tiene relación en schema
-            }
-        });
-        if (!usuario) {
-            return res.status(404).json({ error: 'Usuario no encontrado' });
-        }
-        res.json(usuario);
+        if (id === null)
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID inválido'));
+        const usuario = await db_1.default.usuarioSistema.findUnique({ where: { id_usuario: id }, include: { rol: true, estado: true, congregacion: true } });
+        if (!usuario)
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.notFound('Usuario no encontrado'));
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(usuario));
     }
     catch (error) {
-        console.error('Error getting usuario:', error);
-        res.status(500).json({ error: 'Error al obtener usuario' });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener usuario', error));
     }
 });
-// Create user - Solo admin
+// Create user
 router.post('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'crear'), async (req, res) => {
     try {
         const { username, email, password, id_rol, id_estado, id_congregacion, id_miembro } = req.body;
-        if (!username || !email || !password || !id_rol || !id_estado) {
-            return res.status(400).json({ error: 'Faltan campos requeridos' });
-        }
-        // Check if user exists
-        const existingUser = await db_1.default.usuarioSistema.findFirst({
-            where: {
-                OR: [{ username }, { email }]
-            }
-        });
-        if (existingUser) {
-            return res.status(400).json({ error: 'Usuario o email ya existe' });
-        }
+        if (!username || !email || !password || !id_rol || !id_estado)
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('Faltan campos requeridos'));
+        const existingUser = await db_1.default.usuarioSistema.findFirst({ where: { OR: [{ username }, { email }] } });
+        if (existingUser)
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('Usuario o email ya existe'));
         const hashedPassword = await bcrypt_1.default.hash(password, 10);
         const newUsuario = await db_1.default.usuarioSistema.create({
-            data: {
-                username,
-                email,
-                password_hash: hashedPassword,
-                id_rol: parseInt(id_rol),
-                id_estado: parseInt(id_estado),
-                id_congregacion: id_congregacion ? parseInt(id_congregacion) : null,
-                id_miembro: id_miembro ? parseInt(id_miembro) : null
-            },
-            include: {
-                rol: true,
-                estado: true,
-                congregacion: true
-            }
+            data: { username, email, password_hash: hashedPassword, id_rol: parseInt(id_rol), id_estado: parseInt(id_estado), id_congregacion: id_congregacion ? parseInt(id_congregacion) : null, id_miembro: id_miembro ? parseInt(id_miembro) : null },
+            include: { rol: true, estado: true, congregacion: true }
         });
-        res.status(201).json(newUsuario);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.created(newUsuario, 'Usuario creado correctamente'));
     }
     catch (error) {
-        console.error('Error creating usuario:', error);
-        res.status(500).json({ error: 'Error al crear usuario' });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al crear usuario', error));
     }
 });
-// Update user - Solo admin
+// Update user
 router.put('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'actualizar'), async (req, res) => {
     try {
         const id = getId(req);
-        if (id === null) {
-            return res.status(400).json({ error: 'ID inválido' });
-        }
+        if (id === null)
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID inválido'));
         const { password, ...updateData } = req.body;
-        // Hash password if provided
-        if (password) {
+        if (password)
             updateData.password_hash = await bcrypt_1.default.hash(password, 10);
-        }
-        // Parse numeric fields
         if (updateData.id_rol)
             updateData.id_rol = parseInt(updateData.id_rol);
         if (updateData.id_estado)
@@ -210,47 +126,29 @@ router.put('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission
             updateData.id_congregacion = parseInt(updateData.id_congregacion);
         if (updateData.id_miembro)
             updateData.id_miembro = parseInt(updateData.id_miembro);
-        const updatedUsuario = await db_1.default.usuarioSistema.update({
-            where: { id_usuario: id },
-            data: updateData,
-            include: {
-                rol: true,
-                estado: true,
-                congregacion: true
-            }
-        });
-        res.json(updatedUsuario);
+        const updatedUsuario = await db_1.default.usuarioSistema.update({ where: { id_usuario: id }, data: updateData, include: { rol: true, estado: true, congregacion: true } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.updated(updatedUsuario, 'Usuario actualizado correctamente'));
     }
     catch (error) {
-        console.error('Error updating usuario:', error);
-        res.status(500).json({ error: 'Error al actualizar usuario' });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al actualizar usuario', error));
     }
 });
-// Delete user - Solo admin (eliminación lógica)
+// Delete user
 router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'eliminar'), async (req, res) => {
     try {
         const id = getId(req);
-        if (id === null) {
-            return res.status(400).json({ error: 'ID inválido' });
-        }
-        // No permitir eliminar al propio usuario
-        if (id === req.user?.userId) {
-            return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
-        }
-        // Eliminación lógica: buscar estado por código
+        if (id === null)
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID inválido'));
+        if (id === req.user?.userId)
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('No puedes eliminar tu propio usuario'));
         const estadoInactivo = await (0, estados_1.getEstadoByCodigo)('USUARIO', 'INACTIVO');
-        if (!estadoInactivo) {
-            return res.status(500).json({ error: "Estado 'INACTIVO' no encontrado en la base de datos" });
-        }
-        await db_1.default.usuarioSistema.update({
-            where: { id_usuario: id },
-            data: { id_estado: estadoInactivo.id_estado }
-        });
-        res.json({ message: 'Usuario eliminado (inactivo)' });
+        if (!estadoInactivo)
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.error("Estado 'INACTIVO' no encontrado"));
+        await db_1.default.usuarioSistema.update({ where: { id_usuario: id }, data: { id_estado: estadoInactivo.id_estado } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.deleted('Usuario eliminado correctamente'));
     }
     catch (error) {
-        console.error('Error deleting usuario:', error);
-        res.status(500).json({ error: 'Error al eliminar usuario' });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al eliminar usuario', error));
     }
 });
 exports.default = router;

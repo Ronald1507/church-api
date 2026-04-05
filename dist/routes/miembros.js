@@ -8,6 +8,7 @@ const db_1 = __importDefault(require("../config/db"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
 const estados_1 = require("../utils/estados");
+const response_1 = require("../utils/response");
 console.log("===-miembros.ts loaded===");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
@@ -26,168 +27,110 @@ router.get("/opciones/tipos", auth_1.authenticateToken, (0, permissions_1.requir
         const tipos = await db_1.default.tipoMiembro.findMany({
             orderBy: { nombre: "asc" },
         });
-        res.json(tipos);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(tipos, 'Tipos de miembro obtenidos'));
     }
     catch (error) {
-        res.status(500).json({
-            error: "Error al obtener tipos de miembro",
-        });
+        console.error("Error getting tipos:", error);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener tipos de miembro', error));
     }
 });
 // Get metadata for member form (estados, congregaciones, tipos)
-// Para no-admin, solo devuelve su congregación
 router.get("/opciones", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
         let congregacionFilter = {};
         const { nivel } = req.user || {};
-        // Si no es admin, solo puede ver su congregación
         if (nivel !== "ADMIN" && req.user?.id_congregacion) {
-            congregacionFilter = {
-                id_congregacion: req.user.id_congregacion,
-            };
+            congregacionFilter = { id_congregacion: req.user.id_congregacion };
         }
         const [estados, congregaciones, tipos, instituciones] = await Promise.all([
-            db_1.default.estado.findMany({
-                where: { entidad: "MIEMBRO" },
-                orderBy: { nombre: "asc" },
-            }),
-            db_1.default.congregacion.findMany({
-                where: congregacionFilter,
-                include: { estado: true },
-                orderBy: { nombre: "asc" },
-            }),
-            db_1.default.tipoMiembro.findMany({
-                orderBy: { nombre: "asc" },
-            }),
-            db_1.default.institucion.findMany({
-                where: congregacionFilter,
-                include: { estado: true },
-                orderBy: { nombre: "asc" },
-            }),
+            db_1.default.estado.findMany({ where: { entidad: "MIEMBRO" }, orderBy: { nombre: "asc" } }),
+            db_1.default.congregacion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: "asc" } }),
+            db_1.default.tipoMiembro.findMany({ orderBy: { nombre: "asc" } }),
+            db_1.default.institucion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: "asc" } }),
         ]);
-        res.json({ estados, congregaciones, tipos, instituciones });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success({ estados, congregaciones, tipos, instituciones }));
     }
     catch (error) {
         console.error("Get metadata error:", error);
-        res.status(500).json({ error: "Error al obtener metadatos" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener metadatos', error));
     }
 });
-// Get all members - retorna todos los miembros
+// Get all members
 router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const miembros = await db_1.default.miembro.findMany({
-            where: {
-                ...congregacionFilter
-            },
+            where: { ...congregacionFilter },
             take: 100,
-            include: {
-                estado: true,
-                congregacion: true,
-                tipoMiembro: true
-            }
+            include: { estado: true, congregacion: true, tipoMiembro: true }
         });
-        res.json(miembros);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(miembros, 'Miembros obtenidos'));
     }
     catch (error) {
         console.error("Error getting miembros:", error);
-        res.status(500).json({ error: "Error al obtener miembros" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener miembros', error));
     }
 });
-// Get members by estado - valida que el estado pertenezca a MIEMBRO
+// Get members by estado
 router.get("/estado/:idEstado", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
         const idEstado = getNumericId(req.params.idEstado);
         if (idEstado === null) {
-            return res.status(400).json({ error: "ID de estado inválido" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID de estado inválido'));
         }
-        // Validar que el estado pertenece a la entidad MIEMBRO
-        const estado = await db_1.default.estado.findUnique({
-            where: { id_estado: idEstado }
-        });
+        const estado = await db_1.default.estado.findUnique({ where: { id_estado: idEstado } });
         if (!estado) {
-            return res.status(404).json({ error: "Estado no encontrado" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.notFound('Estado no encontrado'));
         }
         if (estado.entidad !== 'MIEMBRO') {
-            return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad MIEMBRO` });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError(`El estado ${idEstado} no pertenece a la entidad MIEMBRO`));
         }
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const miembros = await db_1.default.miembro.findMany({
-            where: {
-                ...congregacionFilter,
-                id_estado: idEstado
-            },
+            where: { ...congregacionFilter, id_estado: idEstado },
             take: 100,
-            include: {
-                estado: true,
-                congregacion: true,
-                tipoMiembro: true
-            }
+            include: { estado: true, congregacion: true, tipoMiembro: true }
         });
-        res.json(miembros);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(miembros, 'Miembros obtenidos por estado'));
     }
     catch (error) {
         console.error("Error getting members by estado:", error);
-        res.status(500).json({ error: "Error al obtener miembros" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener miembros', error));
     }
 });
-// Get member by ID - filtrado por congregación
+// Get member by ID
 router.get("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
         const memberId = getId(req);
         if (memberId === null) {
-            return res
-                .status(400)
-                .json({ error: "ID de miembro inválido" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID de miembro inválido'));
         }
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const miembro = await db_1.default.miembro.findFirst({
-            where: {
-                id_miembro: memberId,
-                ...congregacionFilter,
-            },
+            where: { id_miembro: memberId, ...congregacionFilter },
             include: {
                 estado: true,
                 congregacion: true,
                 tipoMiembro: true,
-                miembroInstitucions: {
-                    include: {
-                        institucion: true,
-                        estado: true
-                    },
-                },
-                relacionesOrigen: {
-                    include: { miembroDestino: true, tipoRelacion: true },
-                },
-                relacionesDestino: {
-                    include: { miembroOrigen: true, tipoRelacion: true },
-                },
-                historialEspirituals: {
-                    include: { tipoHito: true },
-                },
-                visitaPastorals: {
-                    include: { pastor: true, estado: true }
-                },
-                peticionOraciones: {
-                    include: { estado: true }
-                },
-                asistenciaEventos: {
-                    include: { evento: true },
-                },
-                documentos: {
-                    include: { estado: true }
-                },
+                miembroInstitucions: { include: { institucion: true, estado: true } },
+                relacionesOrigen: { include: { miembroDestino: true, tipoRelacion: true } },
+                relacionesDestino: { include: { miembroOrigen: true, tipoRelacion: true } },
+                historialEspirituals: { include: { tipoHito: true } },
+                visitaPastorals: { include: { pastor: true, estado: true } },
+                peticionOraciones: { include: { estado: true } },
+                asistenciaEventos: { include: { evento: true } },
+                documentos: { include: { estado: true } },
                 ofrendaDizmos: true,
             },
         });
         if (!miembro) {
-            return res.status(404).json({ error: "Miembro no encontrado" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.notFound('Miembro no encontrado'));
         }
-        res.json(miembro);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(miembro));
     }
     catch (error) {
         console.error("Get miembro error:", error);
-        res.status(500).json({ error: "Error al obtener miembro" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener miembro', error));
     }
 });
 // Create member
@@ -195,11 +138,9 @@ router.post("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)(
     try {
         const { nivel } = req.user || {};
         const input = req.body;
-        // Validar campos requeridos
         if (!input.nombres || !input.apellidos || !input.id_estado || !input.id_tipo_miembro) {
-            return res.status(400).json({ error: "Faltan campos requeridos" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('Faltan campos requeridos'));
         }
-        // Determinar congregación
         let id_congregacion;
         if (nivel === "ADMIN" && input.id_congregacion) {
             id_congregacion = parseInt(String(input.id_congregacion));
@@ -208,10 +149,10 @@ router.post("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)(
             id_congregacion = req.user.id_congregacion;
         }
         else {
-            return res.status(400).json({ error: "Debe especificar una congregación" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('Debe especificar una congregación'));
         }
         if (isNaN(id_congregacion)) {
-            return res.status(400).json({ error: "ID de congregación inválido" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID de congregación inválido'));
         }
         const newMiembro = await db_1.default.miembro.create({
             data: {
@@ -231,11 +172,11 @@ router.post("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)(
             },
             include: { estado: true, congregacion: true, tipoMiembro: true },
         });
-        res.status(201).json(newMiembro);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.created(newMiembro, 'Miembro creado correctamente'));
     }
     catch (error) {
         console.error("Create miembro error:", error);
-        res.status(500).json({ error: "Error al crear miembro" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al crear miembro', error));
     }
 });
 // Update member
@@ -243,40 +184,30 @@ router.put("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
     try {
         const memberId = getId(req);
         if (memberId === null) {
-            return res.status(400).json({ error: "ID de miembro inválido" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID de miembro inválido'));
         }
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const existingMiembro = await db_1.default.miembro.findFirst({
             where: { id_miembro: memberId, ...congregacionFilter },
         });
         if (!existingMiembro) {
-            return res.status(404).json({ error: "Miembro no encontrado" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.notFound('Miembro no encontrado'));
         }
         const input = req.body;
-        // Campos válidos del modelo Miembro (sin relaciones, sin campos del sistema)
-        const allowedFields = [
-            'nombres', 'apellidos', 'fecha_nacimiento', 'genero',
-            'estado_civil', 'rut', 'telefono', 'email', 'direccion',
-            'foto_url', 'id_estado', 'id_congregacion', 'id_tipo_miembro'
-        ];
-        // Construir objeto de update solo con campos válidos
+        const allowedFields = ['nombres', 'apellidos', 'fecha_nacimiento', 'genero', 'estado_civil', 'rut', 'telefono', 'email', 'direccion', 'foto_url', 'id_estado', 'id_congregacion', 'id_tipo_miembro'];
         const updateData = {};
         for (const field of allowedFields) {
             if (field in input) {
                 const value = input[field];
-                // Campos que deben ser parseados a número
                 if (['id_estado', 'id_congregacion', 'id_tipo_miembro'].includes(field)) {
                     if (value === '' || value === null || value === undefined) {
                         updateData[field] = existingMiembro[field];
                     }
                     else {
                         const parsed = parseInt(String(value));
-                        updateData[field] = isNaN(parsed)
-                            ? existingMiembro[field]
-                            : parsed;
+                        updateData[field] = isNaN(parsed) ? existingMiembro[field] : parsed;
                     }
                 }
-                // Fecha de nacimiento
                 else if (field === 'fecha_nacimiento') {
                     if (!value || value === '') {
                         updateData[field] = existingMiembro.fecha_nacimiento;
@@ -288,7 +219,6 @@ router.put("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
                         updateData[field] = new Date(value);
                     }
                 }
-                // Otros campos opcionales
                 else if (value === '' || value === undefined) {
                     updateData[field] = existingMiembro[field] ?? null;
                 }
@@ -297,7 +227,6 @@ router.put("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
                 }
             }
         }
-        // Si no es admin, no permitir cambiar la congregación
         const { nivel } = req.user || {};
         if (nivel !== "ADMIN") {
             delete updateData.id_congregacion;
@@ -307,88 +236,73 @@ router.put("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
             data: updateData,
             include: { estado: true, congregacion: true, tipoMiembro: true },
         });
-        res.json(updatedMiembro);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.updated(updatedMiembro, 'Miembro actualizado correctamente'));
     }
     catch (error) {
         console.error("Update miembro error:", error);
-        res.status(500).json({ error: "Error al actualizar miembro" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al actualizar miembro', error));
     }
 });
-// Delete member (eliminación lógica)
+// Delete member (logical deletion)
 router.delete("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "eliminar"), async (req, res) => {
     try {
-        console.log(">>> DELETE /:id reached with params:", req.params);
         const memberId = getId(req);
         if (memberId === null) {
-            return res
-                .status(400)
-                .json({ error: "ID de miembro inválido" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID de miembro inválido'));
         }
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
-        // Verificar que el miembro pertenezca a la congregación del usuario
         const existingMiembro = await db_1.default.miembro.findFirst({
-            where: {
-                id_miembro: memberId,
-                ...congregacionFilter,
-            },
+            where: { id_miembro: memberId, ...congregacionFilter },
         });
         if (!existingMiembro) {
-            return res.status(404).json({ error: "Miembro no encontrado" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.notFound('Miembro no encontrado'));
         }
-        // Eliminación lógica: buscar estado por código en vez de ID hardcodeado
         const estadoEliminado = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ELIMINADO');
         if (!estadoEliminado) {
-            return res.status(500).json({ error: "Estado 'ELIMINADO' no encontrado en la base de datos" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.error("Estado 'ELIMINADO' no encontrado en la base de datos"));
         }
         await db_1.default.miembro.update({
             where: { id_miembro: memberId },
             data: { id_estado: estadoEliminado.id_estado }
         });
-        res.json({ message: "Miembro eliminado" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.deleted('Miembro eliminado correctamente'));
     }
     catch (error) {
         console.error("Delete miembro error:", error);
-        res.status(500).json({ error: "Error al eliminar miembro" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al eliminar miembro', error));
     }
 });
-// Toggle member status (activar/inactivar)
+// Toggle member status
 router.patch("/:id/status", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "actualizar"), async (req, res) => {
     try {
         const memberId = getId(req);
         if (memberId === null) {
-            return res.status(400).json({ error: "ID de miembro inválido" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.validationError('ID de miembro inválido'));
         }
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const existingMiembro = await db_1.default.miembro.findFirst({
-            where: {
-                id_miembro: memberId,
-                ...congregacionFilter,
-            },
+            where: { id_miembro: memberId, ...congregacionFilter },
         });
         if (!existingMiembro) {
-            return res.status(404).json({ error: "Miembro no encontrado" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.notFound('Miembro no encontrado'));
         }
-        // Toggle: buscar estados por código en vez de IDs hardcodeados
         const estadoActivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ACTIVO');
         const estadoInactivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'INACTIVO');
         if (!estadoActivo || !estadoInactivo) {
-            return res.status(500).json({ error: "Estados 'ACTIVO' o 'INACTIVO' no encontrados en la base de datos" });
+            return (0, response_1.sendResponse)(res, response_1.ApiResponse.error("Estados 'ACTIVO' o 'INACTIVO' no encontrados"));
         }
-        const nuevoEstado = existingMiembro.id_estado === estadoActivo.id_estado
-            ? estadoInactivo.id_estado
-            : estadoActivo.id_estado;
+        const nuevoEstado = existingMiembro.id_estado === estadoActivo.id_estado ? estadoInactivo.id_estado : estadoActivo.id_estado;
         await db_1.default.miembro.update({
             where: { id_miembro: memberId },
             data: { id_estado: nuevoEstado }
         });
-        res.json({ message: nuevoEstado === estadoActivo.id_estado ? "Miembro activado" : "Miembro inactivado" });
+        const mensaje = nuevoEstado === estadoActivo.id_estado ? 'Miembro activado correctamente' : 'Miembro inactivado correctamente';
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(null, mensaje));
     }
     catch (error) {
         console.error("Toggle miembro status error:", error);
-        res.status(500).json({ error: "Error al cambiar estado del miembro" });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al cambiar estado del miembro', error));
     }
 });
-// Get member types
-// MOVED TO TOP - duplicates removed
 exports.default = router;
 //# sourceMappingURL=miembros.js.map

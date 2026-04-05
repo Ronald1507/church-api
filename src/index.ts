@@ -4,6 +4,7 @@ dotenv.config();
 import express, { Application, Request, Response, NextFunction } from "express";
 import cors from "cors";
 import prisma from "./config/db";
+import { ApiResponse } from "./utils/response";
 
 // Rutas
 import authRoutes from "./routes/auth";
@@ -37,18 +38,20 @@ app.use("/api/estados", estadoRoutes);
 
 // Health check
 app.get("/health", (req: Request, res: Response) => {
-	res.json({ status: "ok", timestamp: new Date().toISOString() });
+	res.json(ApiResponse.success({ status: "ok", timestamp: new Date().toISOString() }));
 });
 
 // Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 	console.error("Error:", err.message);
-	res.status(500).json({ error: "Error interno del servidor" });
+	const response = ApiResponse.error("Error interno del servidor", err.message);
+	res.status(response.statusCode).json(response);
 });
 
-// 404 handler
+// 404 handler - usar ApiResponse
 app.use((req: Request, res: Response) => {
-	res.status(404).json({ error: "Ruta no encontrada" });
+	const response = ApiResponse.notFound("Ruta no encontrada");
+	res.status(response.statusCode).json(response);
 });
 
 async function main() {

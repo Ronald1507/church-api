@@ -3,530 +3,203 @@ import prisma from '../config/db';
 import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
 import { getEstadoByCodigo } from '../utils/estados';
+import { ApiResponse, sendResponse } from '../utils/response';
 
 const router = Router();
 
-// Helper to get numeric ID from params
 const getId = (req: Request): number | null => {
   const id = req.params.id;
   const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
   return isNaN(num) ? null : num;
 };
 
-// Helper to get numeric ID from any param
 const getNumericId = (param: string | string[]): number | null => {
   const value = Array.isArray(param) ? param[0] : param;
   const num = parseInt(value);
   return isNaN(num) ? null : num;
 };
 
-// Get options for institucion form - MUST BE BEFORE /:id
+// Opciones
 router.get('/opciones', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     let congregacionFilter = {};
     const { nivel } = req.user || {};
-    
-    // Si no es admin, solo puede ver su congregación
-    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
-      congregacionFilter = { id_congregacion: req.user.id_congregacion };
-    }
-
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) congregacionFilter = { id_congregacion: req.user.id_congregacion };
     const [estados, congregaciones] = await Promise.all([
-      prisma.estado.findMany({
-        where: { entidad: 'INSTITUCION' },
-        orderBy: { nombre: 'asc' }
-      }),
-      prisma.congregacion.findMany({
-        where: congregacionFilter,
-        include: { estado: true },
-        orderBy: { nombre: 'asc' }
-      })
+      prisma.estado.findMany({ where: { entidad: 'INSTITUCION' }, orderBy: { nombre: 'asc' } }),
+      prisma.congregacion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: 'asc' } })
     ]);
-    
-    // Tipos de institución hardcodeados
     const tiposInstitucion = [
-      { id: 'CORO', nombre: 'Coro' },
-      { id: 'JOVENES', nombre: 'Jóvenes' },
-      { id: 'DORCAS', nombre: 'Dorcas' },
-      { id: 'ESCUELA_DOMINICAL', nombre: 'Escuela Dominical' },
-      { id: 'GUARDERIA', nombre: 'Guardería' },
-      { id: 'OTRO', nombre: 'Otro' }
+      { id: 'CORO', nombre: 'Coro' }, { id: 'JOVENES', nombre: 'Jóvenes' }, { id: 'DORCAS', nombre: 'Dorcas' },
+      { id: 'ESCUELA_DOMINICAL', nombre: 'Escuela Dominical' }, { id: 'GUARDERIA', nombre: 'Guardería' }, { id: 'OTRO', nombre: 'Otro' }
     ];
-    
-    res.json({ estados, congregaciones, tipos: tiposInstitucion });
+    return sendResponse(res, ApiResponse.success({ estados, congregaciones, tipos: tiposInstitucion }));
   } catch (error) {
-    console.error('Get metadata error:', error);
-    res.status(500).json({ error: 'Error al obtener metadatos' });
+    return sendResponse(res, ApiResponse.error('Error al obtener metadatos', error));
   }
 });
 
-// Get all instituciones - filtrado por congregación
+// Get all instituciones
 router.get('/', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    const instituciones = await prisma.institucion.findMany({
-      where: {
-        ...congregacionFilter
-      },
-      include: {
-        congregacion: true,
-        estado: true
-      },
-      orderBy: { nombre: 'asc' }
-    });
-    res.json(instituciones);
+    const instituciones = await prisma.institucion.findMany({ where: congregacionFilter, include: { congregacion: true, estado: true }, orderBy: { nombre: 'asc' } });
+    return sendResponse(res, ApiResponse.success(instituciones));
   } catch (error) {
-    console.error('Error getting instituciones:', error);
-    res.status(500).json({ error: 'Error al obtener instituciones' });
+    return sendResponse(res, ApiResponse.error('Error al obtener instituciones', error));
   }
 });
 
-// Get instituciones by estado - valida que el estado pertenezca a INSTITUCION
 router.get('/estado/:idEstado', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const idEstado = getNumericId(req.params.idEstado);
-    if (idEstado === null) {
-      return res.status(400).json({ error: 'ID de estado inválido' });
-    }
-    
-    // Validar que el estado pertenece a la entidad INSTITUCION
-    const estado = await prisma.estado.findUnique({
-      where: { id_estado: idEstado }
-    });
-    
-    if (!estado) {
-      return res.status(404).json({ error: 'Estado no encontrado' });
-    }
-    
-    if (estado.entidad !== 'INSTITUCION') {
-      return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad INSTITUCION` });
-    }
-    
+    if (idEstado === null) return sendResponse(res, ApiResponse.validationError('ID de estado inválido'));
+    const estado = await prisma.estado.findUnique({ where: { id_estado: idEstado } });
+    if (!estado) return sendResponse(res, ApiResponse.notFound('Estado no encontrado'));
+    if (estado.entidad !== 'INSTITUCION') return sendResponse(res, ApiResponse.validationError('El estado no pertenece a INSTITUCION'));
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    const instituciones = await prisma.institucion.findMany({
-      where: {
-        ...congregacionFilter,
-        id_estado: idEstado
-      },
-      include: {
-        congregacion: true,
-        estado: true
-      },
-      orderBy: { nombre: 'asc' }
-    });
-    res.json(instituciones);
+    const instituciones = await prisma.institucion.findMany({ where: { ...congregacionFilter, id_estado: idEstado }, include: { congregacion: true, estado: true }, orderBy: { nombre: 'asc' } });
+    return sendResponse(res, ApiResponse.success(instituciones));
   } catch (error) {
-    console.error('Error getting instituciones by estado:', error);
-    res.status(500).json({ error: 'Error al obtener instituciones' });
+    return sendResponse(res, ApiResponse.error('Error al obtener instituciones', error));
   }
 });
 
-// Get institucion by ID - DEBE SER ÚLTIMO
 router.get('/:id', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
-    if (id === null) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-    
+    if (id === null) return sendResponse(res, ApiResponse.validationError('ID inválido'));
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    const institucion = await prisma.institucion.findFirst({
-      where: {
-        id_institucion: id,
-        ...congregacionFilter
-      },
-      include: {
-        congregacion: true,
-        estado: true,
-        miembroInstitucions: {
-          include: { miembro: true, estado: true }
-        }
-      }
-    });
-
-    if (!institucion) {
-      return res.status(404).json({ error: 'Institución no encontrada' });
-    }
-
-    res.json(institucion);
+    const institucion = await prisma.institucion.findFirst({ where: { id_institucion: id, ...congregacionFilter }, include: { congregacion: true, estado: true, miembroInstitucions: { include: { miembro: true, estado: true } } } });
+    if (!institucion) return sendResponse(res, ApiResponse.notFound('Institución no encontrada'));
+    return sendResponse(res, ApiResponse.success(institucion));
   } catch (error) {
-    console.error('Error getting institucion:', error);
-    res.status(500).json({ error: 'Error al obtener institución' });
+    return sendResponse(res, ApiResponse.error('Error al obtener institución', error));
   }
 });
 
-// Create institucion
 router.post('/', authenticateToken, requirePermission('instituciones', 'crear'), async (req: AuthRequest, res: Response) => {
   try {
     const { nombre, tipo, descripcion, id_congregacion, id_estado } = req.body;
-
-    if (!nombre || !id_estado) {
-      return res.status(400).json({ error: 'Faltan campos requeridos' });
-    }
-
-    // Si no es admin, forzar la congregación del usuario
+    if (!nombre || !id_estado) return sendResponse(res, ApiResponse.validationError('Faltan campos requeridos'));
     let congregacionId = id_congregacion;
     const { nivel } = req.user || {};
-    if (nivel !== 'ADMIN' && req.user?.id_congregacion) {
-      congregacionId = req.user.id_congregacion;
-    }
-
-    if (!congregacionId) {
-      return res.status(400).json({ error: 'Debe especificar una congregación' });
-    }
-
-    const newInstitucion = await prisma.institucion.create({
-      data: {
-        nombre,
-        tipo,
-        descripcion,
-        id_congregacion: congregacionId,
-        id_estado
-      },
-      include: {
-        congregacion: true,
-        estado: true
-      }
-    });
-
-    res.status(201).json(newInstitucion);
+    if (nivel !== 'ADMIN' && req.user?.id_congregacion) congregacionId = req.user.id_congregacion;
+    if (!congregacionId) return sendResponse(res, ApiResponse.validationError('Debe especificar una congregación'));
+    const newInstitucion = await prisma.institucion.create({ data: { nombre, tipo, descripcion, id_congregacion: congregacionId, id_estado }, include: { congregacion: true, estado: true } });
+    return sendResponse(res, ApiResponse.created(newInstitucion, 'Institución creada correctamente'));
   } catch (error) {
-    console.error('Error creating institucion:', error);
-    res.status(500).json({ error: 'Error al crear institución' });
+    return sendResponse(res, ApiResponse.error('Error al crear institución', error));
   }
 });
 
-// Update institucion
 router.put('/:id', authenticateToken, requirePermission('instituciones', 'actualizar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
-    if (id === null) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-
+    if (id === null) return sendResponse(res, ApiResponse.validationError('ID inválido'));
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    // Verificar que la institucion pertenezca a la congregación del usuario
-    const existingInstitucion = await prisma.institucion.findFirst({
-      where: {
-        id_institucion: id,
-        ...congregacionFilter
-      }
-    });
-
-    if (!existingInstitucion) {
-      return res.status(404).json({ error: 'Institución no encontrada' });
-    }
-    
+    const existingInstitucion = await prisma.institucion.findFirst({ where: { id_institucion: id, ...congregacionFilter } });
+    if (!existingInstitucion) return sendResponse(res, ApiResponse.notFound('Institución no encontrada'));
     const updateData = { ...req.body };
     delete updateData.id_institucion;
     delete updateData.created_at;
     delete updateData.updated_at;
-
-    // Si no es admin, no permitir cambiar la congregación
     const { nivel } = req.user || {};
-    if (nivel !== 'ADMIN' && updateData.id_congregacion) {
-      delete updateData.id_congregacion;
-    }
-
-    const updatedInstitucion = await prisma.institucion.update({
-      where: { id_institucion: id },
-      data: updateData,
-      include: {
-        congregacion: true,
-        estado: true
-      }
-    });
-
-    res.json(updatedInstitucion);
+    if (nivel !== 'ADMIN' && updateData.id_congregacion) delete updateData.id_congregacion;
+    const updatedInstitucion = await prisma.institucion.update({ where: { id_institucion: id }, data: updateData, include: { congregacion: true, estado: true } });
+    return sendResponse(res, ApiResponse.updated(updatedInstitucion, 'Institución actualizada correctamente'));
   } catch (error) {
-    console.error('Error updating institucion:', error);
-    res.status(500).json({ error: 'Error al actualizar institución' });
+    return sendResponse(res, ApiResponse.error('Error al actualizar institución', error));
   }
 });
 
-// Delete institucion (eliminación lógica)
 router.delete('/:id', authenticateToken, requirePermission('instituciones', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
-    if (id === null) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-
+    if (id === null) return sendResponse(res, ApiResponse.validationError('ID inválido'));
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    // Verificar que la institucion pertenezca a la congregación del usuario
-    const existingInstitucion = await prisma.institucion.findFirst({
-      where: {
-        id_institucion: id,
-        ...congregacionFilter
-      }
-    });
-
-    if (!existingInstitucion) {
-      return res.status(404).json({ error: 'Institución no encontrada' });
-    }
-    
-    // Eliminación lógica: buscar estado por código
+    const existingInstitucion = await prisma.institucion.findFirst({ where: { id_institucion: id, ...congregacionFilter } });
+    if (!existingInstitucion) return sendResponse(res, ApiResponse.notFound('Institución no encontrada'));
     const estadoInactiva = await getEstadoByCodigo('INSTITUCION', 'INACTIVA');
-    if (!estadoInactiva) {
-      return res.status(500).json({ error: "Estado 'INACTIVA' no encontrado en la base de datos" });
-    }
-
-    await prisma.institucion.update({
-      where: { id_institucion: id },
-      data: { id_estado: estadoInactiva.id_estado }
-    });
-    
-    res.json({ message: 'Institución eliminada (inactiva)' });
+    if (!estadoInactiva) return sendResponse(res, ApiResponse.error("Estado 'INACTIVA' no encontrado"));
+    await prisma.institucion.update({ where: { id_institucion: id }, data: { id_estado: estadoInactiva.id_estado } });
+    return sendResponse(res, ApiResponse.deleted('Institución eliminada correctamente'));
   } catch (error) {
-    console.error('Error deleting institucion:', error);
-    res.status(500).json({ error: 'Error al eliminar institución' });
+    return sendResponse(res, ApiResponse.error('Error al eliminar institución', error));
   }
 });
 
-// ==================== CARGOS DE INSTITUCIÓN ====================
-
-// Get members of an institucion with their roles
+// Miembros de institución
 router.get('/:id/miembros', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
-    if (id === null) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-
+    if (id === null) return sendResponse(res, ApiResponse.validationError('ID inválido'));
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    const institucion = await prisma.institucion.findFirst({
-      where: {
-        id_institucion: id,
-        ...congregacionFilter
-      }
-    });
-
-    if (!institucion) {
-      return res.status(404).json({ error: 'Institución no encontrada' });
-    }
-
-    const miembros = await prisma.miembroInstitucion.findMany({
-      where: { id_institucion: id },
-      include: {
-        miembro: true,
-        estado: true
-      },
-      orderBy: { fecha_ingreso: 'desc' }
-    });
-
-    // También obtener los cargos activos
-    const cargos = await prisma.cargoInstitucion.findMany({
-      where: { 
-        id_institucion: id,
-        fecha_fin: null
-      },
-      include: {
-        miembro: true,
-        estado: true
-      }
-    });
-
-    res.json({ miembros, cargos });
+    const institucion = await prisma.institucion.findFirst({ where: { id_institucion: id, ...congregacionFilter } });
+    if (!institucion) return sendResponse(res, ApiResponse.notFound('Institución no encontrada'));
+    const miembros = await prisma.miembroInstitucion.findMany({ where: { id_institucion: id }, include: { miembro: true, estado: true }, orderBy: { fecha_ingreso: 'desc' } });
+    const cargos = await prisma.cargoInstitucion.findMany({ where: { id_institucion: id, fecha_fin: null }, include: { miembro: true, estado: true } });
+    return sendResponse(res, ApiResponse.success({ miembros, cargos }));
   } catch (error) {
-    console.error('Error getting miembros:', error);
-    res.status(500).json({ error: 'Error al obtener miembros de la institución' });
+    return sendResponse(res, ApiResponse.error('Error al obtener miembros', error));
   }
 });
 
-// Add member to institucion
 router.post('/:id/miembros', authenticateToken, requirePermission('instituciones', 'actualizar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
-    if (id === null) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-
+    if (id === null) return sendResponse(res, ApiResponse.validationError('ID inválido'));
     const { id_miembro, rol } = req.body;
-
-    if (!id_miembro) {
-      return res.status(400).json({ error: 'ID de miembro requerido' });
-    }
-
+    if (!id_miembro) return sendResponse(res, ApiResponse.validationError('ID de miembro requerido'));
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    const institucion = await prisma.institucion.findFirst({
-      where: {
-        id_institucion: id,
-        ...congregacionFilter
-      }
-    });
-
-    if (!institucion) {
-      return res.status(404).json({ error: 'Institución no encontrada' });
-    }
-
-    // Verificar que el miembro exista y pertenezca a la misma congregación
-    const miembro = await prisma.miembro.findFirst({
-      where: {
-        id_miembro,
-        ...congregacionFilter
-      }
-    });
-
-    if (!miembro) {
-      return res.status(404).json({ error: 'Miembro no encontrado en esta congregación' });
-    }
-
-    // Obtener estado activo para miembros de institución
+    const institucion = await prisma.institucion.findFirst({ where: { id_institucion: id, ...congregacionFilter } });
+    if (!institucion) return sendResponse(res, ApiResponse.notFound('Institución no encontrada'));
+    const miembro = await prisma.miembro.findFirst({ where: { id_miembro, ...congregacionFilter } });
+    if (!miembro) return sendResponse(res, ApiResponse.notFound('Miembro no encontrado en esta congregación'));
     const estadoActivo = await getEstadoByCodigo('MIEMBRO', 'ACTIVO');
-    if (!estadoActivo) {
-      return res.status(500).json({ error: "Estado 'ACTIVO' no encontrado en la base de datos" });
-    }
-
-    const newRelacion = await prisma.miembroInstitucion.create({
-      data: {
-        id_miembro,
-        id_institucion: id,
-        rol: rol || 'MIEMBRO',
-        id_estado: estadoActivo.id_estado,
-        fecha_ingreso: new Date()
-      },
-      include: {
-        miembro: true,
-        institucion: true
-      }
-    });
-
-    res.status(201).json(newRelacion);
+    if (!estadoActivo) return sendResponse(res, ApiResponse.error("Estado 'ACTIVO' no encontrado"));
+    const newRelacion = await prisma.miembroInstitucion.create({ data: { id_miembro, id_institucion: id, rol: rol || 'MIEMBRO', id_estado: estadoActivo.id_estado, fecha_ingreso: new Date() }, include: { miembro: true, institucion: true } });
+    return sendResponse(res, ApiResponse.created(newRelacion, 'Miembro agregado correctamente'));
   } catch (error) {
-    console.error('Error adding miembro:', error);
-    res.status(500).json({ error: 'Error al agregar miembro a la institución' });
+    return sendResponse(res, ApiResponse.error('Error al agregar miembro', error));
   }
 });
 
-// Assign cargo to member in institucion
 router.post('/:id/cargos', authenticateToken, requirePermission('instituciones', 'actualizar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
-    if (id === null) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-
+    if (id === null) return sendResponse(res, ApiResponse.validationError('ID inválido'));
     const { id_miembro, rol, fecha_inicio } = req.body;
-
-    if (!id_miembro || !rol) {
-      return res.status(400).json({ error: 'ID de miembro y rol requeridos' });
-    }
-
+    if (!id_miembro || !rol) return sendResponse(res, ApiResponse.validationError('ID de miembro y rol requeridos'));
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    const institucion = await prisma.institucion.findFirst({
-      where: {
-        id_institucion: id,
-        ...congregacionFilter
-      }
-    });
-
-    if (!institucion) {
-      return res.status(404).json({ error: 'Institución no encontrada' });
-    }
-
-    // Verificar que el miembro esté relacionado con la institución
-    const miembroInstitucion = await prisma.miembroInstitucion.findFirst({
-      where: {
-        id_miembro,
-        id_institucion: id
-      }
-    });
-
-    if (!miembroInstitucion) {
-      return res.status(400).json({ error: 'El miembro no pertenece a esta institución' });
-    }
-
-    // Obtener estado activo para cargos
+    const institucion = await prisma.institucion.findFirst({ where: { id_institucion: id, ...congregacionFilter } });
+    if (!institucion) return sendResponse(res, ApiResponse.notFound('Institución no encontrada'));
+    const miembroInstitucion = await prisma.miembroInstitucion.findFirst({ where: { id_miembro, id_institucion: id } });
+    if (!miembroInstitucion) return sendResponse(res, ApiResponse.validationError('El miembro no pertenece a esta institución'));
     const estadoActivo = await getEstadoByCodigo('MIEMBRO', 'ACTIVO');
-    if (!estadoActivo) {
-      return res.status(500).json({ error: "Estado 'ACTIVO' no encontrado en la base de datos" });
-    }
-
-    // Si el miembro ya tiene un cargo activo, cerrarlo
-    await prisma.cargoInstitucion.updateMany({
-      where: {
-        id_miembro,
-        id_institucion: id,
-        fecha_fin: null
-      },
-      data: {
-        fecha_fin: new Date()
-      }
-    });
-
-    const newCargo = await prisma.cargoInstitucion.create({
-      data: {
-        id_miembro,
-        id_institucion: id,
-        rol,
-        fecha_inicio: fecha_inicio ? new Date(fecha_inicio) : new Date(),
-        id_estado: estadoActivo.id_estado
-      },
-      include: {
-        miembro: true,
-        institucion: true
-      }
-    });
-
-    res.status(201).json(newCargo);
+    if (!estadoActivo) return sendResponse(res, ApiResponse.error("Estado 'ACTIVO' no encontrado"));
+    await prisma.cargoInstitucion.updateMany({ where: { id_miembro, id_institucion: id, fecha_fin: null }, data: { fecha_fin: new Date() } });
+    const newCargo = await prisma.cargoInstitucion.create({ data: { id_miembro, id_institucion: id, rol, fecha_inicio: fecha_inicio ? new Date(fecha_inicio) : new Date(), id_estado: estadoActivo.id_estado }, include: { miembro: true, institucion: true } });
+    return sendResponse(res, ApiResponse.created(newCargo, 'Cargo asignado correctamente'));
   } catch (error) {
-    console.error('Error assigning cargo:', error);
-    res.status(500).json({ error: 'Error al asignar cargo en la institución' });
+    return sendResponse(res, ApiResponse.error('Error al asignar cargo', error));
   }
 });
 
-// Remove member from institucion
 router.delete('/:id/miembros/:idMiembro', authenticateToken, requirePermission('instituciones', 'eliminar'), async (req: AuthRequest, res: Response) => {
   try {
     const id = getId(req);
     const idMiembroParam = req.params.idMiembro;
     const idMiembro = typeof idMiembroParam === 'string' ? parseInt(idMiembroParam) : parseInt(Array.isArray(idMiembroParam) ? idMiembroParam[0] : '');
-    
-    if (id === null || isNaN(idMiembro)) {
-      return res.status(400).json({ error: 'ID inválido' });
-    }
-
+    if (id === null || isNaN(idMiembro)) return sendResponse(res, ApiResponse.validationError('ID inválido'));
     const congregacionFilter = getCongregacionFilter(req.user);
-    
-    const institucion = await prisma.institucion.findFirst({
-      where: {
-        id_institucion: id,
-        ...congregacionFilter
-      }
-    });
-
-    if (!institucion) {
-      return res.status(404).json({ error: 'Institución no encontrada' });
-    }
-
-    // Eliminar relación
-    await prisma.miembroInstitucion.deleteMany({
-      where: {
-        id_miembro: idMiembro,
-        id_institucion: id
-      }
-    });
-
-    // Eliminar cargos del miembro en esta institución
-    await prisma.cargoInstitucion.deleteMany({
-      where: {
-        id_miembro: idMiembro,
-        id_institucion: id
-      }
-    });
-
-    res.json({ message: 'Miembro removido de la institución correctamente' });
+    const institucion = await prisma.institucion.findFirst({ where: { id_institucion: id, ...congregacionFilter } });
+    if (!institucion) return sendResponse(res, ApiResponse.notFound('Institución no encontrada'));
+    await prisma.miembroInstitucion.deleteMany({ where: { id_miembro: idMiembro, id_institucion: id } });
+    await prisma.cargoInstitucion.deleteMany({ where: { id_miembro: idMiembro, id_institucion: id } });
+    return sendResponse(res, ApiResponse.deleted('Miembro removido correctamente'));
   } catch (error) {
-    console.error('Error removing miembro:', error);
-    res.status(500).json({ error: 'Error al remover miembro de la institución' });
+    return sendResponse(res, ApiResponse.error('Error al remover miembro', error));
   }
 });
 
