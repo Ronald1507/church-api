@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import prisma from '../config/db';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { getEstadoByCodigo } from '../utils/estados';
 
 const router = Router();
 
@@ -111,13 +112,19 @@ router.post('/register', async (req: Request, res: Response) => {
     // Default role: 2 (Usuario) if not specified
     const roleId = id_rol || 2;
 
+    // Buscar estado activo dinámicamente
+    const estadoActivo = await getEstadoByCodigo('USUARIO', 'ACTIVO');
+    if (!estadoActivo) {
+      return res.status(500).json({ error: "Estado 'ACTIVO' no encontrado en la base de datos" });
+    }
+
     const newUser = await prisma.usuarioSistema.create({
       data: {
         username,
         password_hash: hashedPassword,
         email,
         id_rol: roleId,
-        id_estado: 1, // Activo
+        id_estado: estadoActivo.id_estado,
         id_miembro: id_miembro || null
       },
       include: { rol: true }

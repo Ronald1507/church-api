@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
 import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
+import { getEstadoByCodigo } from '../utils/estados';
 
 const router = Router();
 
@@ -63,13 +64,26 @@ router.get('/', authenticateToken, requirePermission('configuracion', 'leer'), a
   }
 });
 
-// Get congregaciones by estado - dinámico
+// Get congregaciones by estado - valida que el estado pertenezca a CONGREGACION
 router.get('/estado/:idEstado', authenticateToken, requirePermission('configuracion', 'leer'), async (req: AuthRequest, res: Response) => {
   const { nivel, id_congregacion } = req.user || {};
   
   const idEstado = getNumericId(req.params.idEstado);
   if (idEstado === null) {
     return res.status(400).json({ error: 'ID de estado inválido' });
+  }
+
+  // Validar que el estado pertenece a la entidad CONGREGACION
+  const estado = await prisma.estado.findUnique({
+    where: { id_estado: idEstado }
+  });
+  
+  if (!estado) {
+    return res.status(404).json({ error: 'Estado no encontrado' });
+  }
+  
+  if (estado.entidad !== 'CONGREGACION') {
+    return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad CONGREGACION` });
   }
 
   // Solo SuperAdmin puede ver todas las congregaciones
@@ -115,7 +129,6 @@ router.get('/:id', authenticateToken, requirePermission('configuracion', 'leer')
       where: { id_congregacion: id },
       include: {
         estado: true,
-        ministerios: true,
         miembros: true,
         institucions: true,
         eventos: true,
@@ -201,10 +214,15 @@ router.delete('/:id', authenticateToken, requirePermission('configuracion', 'adm
       return res.status(400).json({ error: 'ID inválido' });
     }
     
-    // Eliminación lógica: cambiar estado a Inactivo
+    // Eliminación lógica: buscar estado por código
+    const estadoInactiva = await getEstadoByCodigo('CONGREGACION', 'INACTIVA');
+    if (!estadoInactiva) {
+      return res.status(500).json({ error: "Estado 'INACTIVA' no encontrado en la base de datos" });
+    }
+
     await prisma.congregacion.update({
       where: { id_congregacion: id },
-      data: { id_estado: 4 } // ID de estado Inactivo para CONGREGACION
+      data: { id_estado: estadoInactiva.id_estado }
     });
 
     res.json({ message: 'Congregación eliminada (inactiva)' });

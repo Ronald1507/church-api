@@ -14,6 +14,7 @@ import finanzasRoutes from "./routes/finanzas";
 import usuarioRoutes from "./routes/usuarios";
 import inventarioRoutes from "./routes/inventario";
 import institucionRoutes from "./routes/instituciones";
+import estadoRoutes from "./routes/estados";
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
@@ -32,6 +33,7 @@ app.use("/api/finanzas", finanzasRoutes);
 app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inventario", inventarioRoutes);
 app.use("/api/instituciones", institucionRoutes);
+app.use("/api/estados", estadoRoutes);
 
 // Health check
 app.get("/health", (req: Request, res: Response) => {

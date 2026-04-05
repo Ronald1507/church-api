@@ -65,6 +65,10 @@ const ENTIDADES_ESTADO: Record<string, Array<{codigo: string; nombre: string; de
     { codigo: 'CONFIRMADA', nombre: 'Confirmada', descripcion: 'Transacción confirmada' },
     { codigo: 'CANCELADA', nombre: 'Cancelada', descripcion: 'Transacción cancelada' }
   ],
+  FINANZA_CUENTA: [
+    { codigo: 'ACTIVA', nombre: 'Cuenta activa', descripcion: 'Cuenta activa' },
+    { codigo: 'INACTIVA', nombre: 'Cuenta inactiva', descripcion: 'Cuenta inactiva' }
+  ],
   INVENTARIO: [
     { codigo: 'DISPONIBLE', nombre: 'Disponible', descripcion: 'Item disponible' },
     { codigo: 'EN USO', nombre: 'En uso', descripcion: 'Item en uso' },

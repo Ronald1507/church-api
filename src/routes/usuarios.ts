@@ -3,6 +3,7 @@ import prisma from '../config/db';
 import bcrypt from 'bcrypt';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
+import { getEstadoByCodigo } from '../utils/estados';
 
 const router = Router();
 
@@ -24,6 +25,10 @@ const getNumericId = (param: string | string[]): number | null => {
 router.get('/opciones', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
 
   try {
+    // Buscar estado activo dinámicamente para filtrar miembros
+    const estadoActivo = await getEstadoByCodigo('MIEMBRO', 'ACTIVO');
+    const miembroFilter = estadoActivo ? { id_estado: estadoActivo.id_estado } : {};
+
     const [roles, estados, miembros, congregaciones] = await Promise.all([
       prisma.rolSistema.findMany({
         orderBy: { nombre: 'asc' }
@@ -33,7 +38,7 @@ router.get('/opciones', authenticateToken, requirePermission('usuarios', 'leer')
         orderBy: { nombre: 'asc' }
       }),
       prisma.miembro.findMany({
-        where: { id_estado: 1 },
+        where: miembroFilter,
         orderBy: { nombres: 'asc' }
       }),
       prisma.congregacion.findMany({
@@ -87,6 +92,19 @@ router.get('/estado/:idEstado', authenticateToken, requirePermission('usuarios',
   const idEstado = getNumericId(req.params.idEstado);
   if (idEstado === null) {
     return res.status(400).json({ error: 'ID de estado inválido' });
+  }
+
+  // Validar que el estado pertenece a la entidad USUARIO
+  const estado = await prisma.estado.findUnique({
+    where: { id_estado: idEstado }
+  });
+  
+  if (!estado) {
+    return res.status(404).json({ error: 'Estado no encontrado' });
+  }
+  
+  if (estado.entidad !== 'USUARIO') {
+    return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad USUARIO` });
   }
 
   // Si no es SuperAdmin, filtrar por congregación
@@ -246,10 +264,15 @@ router.delete('/:id', authenticateToken, requirePermission('usuarios', 'eliminar
       return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
     }
     
-    // Eliminación lógica: cambiar estado a Inactivo
+    // Eliminación lógica: buscar estado por código
+    const estadoInactivo = await getEstadoByCodigo('USUARIO', 'INACTIVO');
+    if (!estadoInactivo) {
+      return res.status(500).json({ error: "Estado 'INACTIVO' no encontrado en la base de datos" });
+    }
+
     await prisma.usuarioSistema.update({
       where: { id_usuario: id },
-      data: { id_estado: 2 } // ID de estado Inactivo para USUARIO
+      data: { id_estado: estadoInactivo.id_estado }
     });
 
     res.json({ message: 'Usuario eliminado (inactivo)' });

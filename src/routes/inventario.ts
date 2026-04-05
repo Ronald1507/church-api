@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
 import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
+import { getEstadoByCodigo } from '../utils/estados';
 
 const router = Router();
 
@@ -80,6 +81,19 @@ router.get('/estado/:idEstado', authenticateToken, requirePermission('inventario
       return res.status(400).json({ error: 'ID de estado inválido' });
     }
     
+    // Validar que el estado pertenece a la entidad INVENTARIO
+    const estado = await prisma.estado.findUnique({
+      where: { id_estado: idEstado }
+    });
+    
+    if (!estado) {
+      return res.status(404).json({ error: 'Estado no encontrado' });
+    }
+    
+    if (estado.entidad !== 'INVENTARIO') {
+      return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad INVENTARIO` });
+    }
+    
     const congregacionFilter = getCongregacionFilter(req.user);
     
     const items = await prisma.inventarioItem.findMany({
@@ -123,7 +137,7 @@ router.get('/:id', authenticateToken, requirePermission('inventario', 'leer'), a
           take: 20
         },
         prestamos: {
-          include: { ministerios: true, estado: true }
+          include: { institucion: true, estado: true }
         }
       }
     });
@@ -256,13 +270,18 @@ router.delete('/:id', authenticateToken, requirePermission('inventario', 'elimin
       return res.status(404).json({ error: 'Item no encontrado' });
     }
     
-    // Eliminación lógica: cambiar estado a Descontinuado
+    // Eliminación lógica: buscar estado por código
+    const estadoBaja = await getEstadoByCodigo('INVENTARIO', 'BAJA');
+    if (!estadoBaja) {
+      return res.status(500).json({ error: "Estado 'BAJA' no encontrado en la base de datos" });
+    }
+
     await prisma.inventarioItem.update({
       where: { id_item: id },
-      data: { id_estado: 17 } // ID de estado Descontinuado para INVENTARIO
+      data: { id_estado: estadoBaja.id_estado }
     });
 
-    res.json({ message: 'Item eliminado (descontinuado)' });
+    res.json({ message: 'Item dado de baja' });
   } catch (error) {
     console.error('Error deleting item:', error);
     res.status(500).json({ error: 'Error al eliminar item' });

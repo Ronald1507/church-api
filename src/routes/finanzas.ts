@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
 import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
+import { getEstadoByCodigo } from '../utils/estados';
 
 const router = Router();
 
@@ -78,6 +79,19 @@ router.get('/cuentas/estado/:idEstado', authenticateToken, requirePermission('fi
     const idEstado = getNumericId(req.params.idEstado);
     if (idEstado === null) {
       return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    
+    // Validar que el estado pertenece a la entidad FINANZA_CUENTA
+    const estado = await prisma.estado.findUnique({
+      where: { id_estado: idEstado }
+    });
+    
+    if (!estado) {
+      return res.status(404).json({ error: 'Estado no encontrado' });
+    }
+    
+    if (estado.entidad !== 'FINANZA_CUENTA') {
+      return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad FINANZA_CUENTA` });
     }
     
     const congregacionFilter = getCongregacionFilter(req.user);
@@ -250,10 +264,15 @@ router.delete('/cuentas/:id', authenticateToken, requirePermission('finanzas', '
       return res.status(404).json({ error: 'Cuenta no encontrada' });
     }
     
-    // Eliminación lógica: cambiar estado a Inactiva
+    // Eliminación lógica: buscar estado por código
+    const estadoInactiva = await getEstadoByCodigo('FINANZA_CUENTA', 'INACTIVA');
+    if (!estadoInactiva) {
+      return res.status(500).json({ error: "Estado 'INACTIVA' no encontrado en la base de datos" });
+    }
+
     await prisma.finanzaCuenta.update({
       where: { id_cuenta: id },
-      data: { id_estado: 14 } // ID de estado Inactiva para CUENTA
+      data: { id_estado: estadoInactiva.id_estado }
     });
 
     res.json({ message: 'Cuenta eliminada (inactiva)' });
@@ -394,13 +413,18 @@ router.delete('/transacciones/:id', authenticateToken, requirePermission('finanz
       return res.status(404).json({ error: 'Transacción no encontrada' });
     }
     
-    // Eliminación lógica: cambiar estado a Anulado (no ajusta saldo para mantener integridad)
+    // Eliminación lógica: buscar estado por código
+    const estadoCancelada = await getEstadoByCodigo('TRANSACCION', 'CANCELADA');
+    if (!estadoCancelada) {
+      return res.status(500).json({ error: "Estado 'CANCELADA' no encontrado en la base de datos" });
+    }
+
     await prisma.transaccion.update({
       where: { id_transaccion: id },
-      data: { id_estado: 15 } // ID de estado Anulado para TRANSACCION
+      data: { id_estado: estadoCancelada.id_estado }
     });
 
-    res.json({ message: 'Transacción eliminada (anulada)' });
+    res.json({ message: 'Transacción eliminada (cancelada)' });
   } catch (error) {
     console.error('Error deleting transaccion:', error);
     res.status(500).json({ error: 'Error al eliminar transacción' });

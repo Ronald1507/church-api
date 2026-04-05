@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
 import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
+import { getEstadoByCodigo } from '../utils/estados';
 
 const router = Router();
 
@@ -74,6 +75,19 @@ router.get('/estado/:idEstado', authenticateToken, requirePermission('eventos', 
     const idEstado = getNumericId(req.params.idEstado);
     if (idEstado === null) {
       return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    
+    // Validar que el estado pertenece a la entidad EVENTO
+    const estado = await prisma.estado.findUnique({
+      where: { id_estado: idEstado }
+    });
+    
+    if (!estado) {
+      return res.status(404).json({ error: 'Estado no encontrado' });
+    }
+    
+    if (estado.entidad !== 'EVENTO') {
+      return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad EVENTO` });
     }
     
     const congregacionFilter = getCongregacionFilter(req.user);
@@ -255,10 +269,15 @@ router.delete('/:id', authenticateToken, requirePermission('eventos', 'eliminar'
       return res.status(404).json({ error: 'Evento no encontrado' });
     }
     
-    // Eliminación lógica: cambiar estado a Cancelado
+    // Eliminación lógica: buscar estado por código
+    const estadoCancelado = await getEstadoByCodigo('EVENTO', 'CANCELADO');
+    if (!estadoCancelado) {
+      return res.status(500).json({ error: "Estado 'CANCELADO' no encontrado en la base de datos" });
+    }
+
     await prisma.evento.update({
       where: { id_evento: id },
-      data: { id_estado: 11 } // ID de estado Cancelado para EVENTO
+      data: { id_estado: estadoCancelado.id_estado }
     });
 
     res.json({ message: 'Evento eliminado (cancelado)' });

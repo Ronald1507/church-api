@@ -6,6 +6,7 @@ import {
 	getCongregacionFilter,
 } from "../middleware/auth";
 import { requirePermission } from "../middleware/permissions";
+import { getEstadoByCodigo } from "../utils/estados";
 
 console.log("===-miembros.ts loaded===");
 
@@ -111,12 +112,25 @@ router.get("/", authenticateToken, requirePermission("miembros", "leer"), async 
 	}
 });
 
-// Get members by estado - dinámico
+// Get members by estado - valida que el estado pertenezca a MIEMBRO
 router.get("/estado/:idEstado", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
 	try {
 		const idEstado = getNumericId(req.params.idEstado);
 		if (idEstado === null) {
 			return res.status(400).json({ error: "ID de estado inválido" });
+		}
+		
+		// Validar que el estado pertenece a la entidad MIEMBRO
+		const estado = await prisma.estado.findUnique({
+			where: { id_estado: idEstado }
+		});
+		
+		if (!estado) {
+			return res.status(404).json({ error: "Estado no encontrado" });
+		}
+		
+		if (estado.entidad !== 'MIEMBRO') {
+			return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad MIEMBRO` });
 		}
 		
 		const congregacionFilter = getCongregacionFilter(req.user);
@@ -367,16 +381,20 @@ router.delete(
 				},
 			});
 
-			if (!existingMiembro) {
-				return res.status(404).json({ error: "Miembro no encontrado" });
-			}
+		if (!existingMiembro) {
+			return res.status(404).json({ error: "Miembro no encontrado" });
+		}
 
-			console.log(">>> DELETE: Changing estado to 21 for member:", memberId);
-			// Eliminación lógica: cambiar estado a Eliminado (estado 21)
-			await prisma.miembro.update({
-				where: { id_miembro: memberId },
-				data: { id_estado: 21 } // ID 21 = Eliminado
-			});
+		// Eliminación lógica: buscar estado por código en vez de ID hardcodeado
+		const estadoEliminado = await getEstadoByCodigo('MIEMBRO', 'ELIMINADO');
+		if (!estadoEliminado) {
+			return res.status(500).json({ error: "Estado 'ELIMINADO' no encontrado en la base de datos" });
+		}
+
+		await prisma.miembro.update({
+			where: { id_miembro: memberId },
+			data: { id_estado: estadoEliminado.id_estado }
+		});
 
 			res.json({ message: "Miembro eliminado" });
 		} catch (error) {
@@ -407,15 +425,24 @@ router.patch("/:id/status", authenticateToken, requirePermission("miembros", "ac
 			return res.status(404).json({ error: "Miembro no encontrado" });
 		}
 
-		// Toggle: si está inactivo(6) -> activo(5), si está activo(5) -> inactivo(6)
-		const nuevoEstado = existingMiembro.id_estado === 5 ? 6 : 5;
+		// Toggle: buscar estados por código en vez de IDs hardcodeados
+		const estadoActivo = await getEstadoByCodigo('MIEMBRO', 'ACTIVO');
+		const estadoInactivo = await getEstadoByCodigo('MIEMBRO', 'INACTIVO');
+		
+		if (!estadoActivo || !estadoInactivo) {
+			return res.status(500).json({ error: "Estados 'ACTIVO' o 'INACTIVO' no encontrados en la base de datos" });
+		}
+
+		const nuevoEstado = existingMiembro.id_estado === estadoActivo.id_estado 
+			? estadoInactivo.id_estado 
+			: estadoActivo.id_estado;
 		
 		await prisma.miembro.update({
 			where: { id_miembro: memberId },
 			data: { id_estado: nuevoEstado }
 		});
 
-		res.json({ message: nuevoEstado === 5 ? "Miembro activado" : "Miembro inactivado" });
+		res.json({ message: nuevoEstado === estadoActivo.id_estado ? "Miembro activado" : "Miembro inactivado" });
 	} catch (error) {
 		console.error("Toggle miembro status error:", error);
 		res.status(500).json({ error: "Error al cambiar estado del miembro" });

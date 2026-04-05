@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../config/db';
 import { authenticateToken, AuthRequest, getCongregacionFilter } from '../middleware/auth';
 import { requirePermission } from '../middleware/permissions';
+import { getEstadoByCodigo } from '../utils/estados';
 
 const router = Router();
 
@@ -81,12 +82,25 @@ router.get('/', authenticateToken, requirePermission('instituciones', 'leer'), a
   }
 });
 
-// Get instituciones by estado - dinámico (ANTES de /:id)
+// Get instituciones by estado - valida que el estado pertenezca a INSTITUCION
 router.get('/estado/:idEstado', authenticateToken, requirePermission('instituciones', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const idEstado = getNumericId(req.params.idEstado);
     if (idEstado === null) {
       return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    
+    // Validar que el estado pertenece a la entidad INSTITUCION
+    const estado = await prisma.estado.findUnique({
+      where: { id_estado: idEstado }
+    });
+    
+    if (!estado) {
+      return res.status(404).json({ error: 'Estado no encontrado' });
+    }
+    
+    if (estado.entidad !== 'INSTITUCION') {
+      return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad INSTITUCION` });
     }
     
     const congregacionFilter = getCongregacionFilter(req.user);
@@ -256,10 +270,15 @@ router.delete('/:id', authenticateToken, requirePermission('instituciones', 'eli
       return res.status(404).json({ error: 'Institución no encontrada' });
     }
     
-    // Eliminación lógica: cambiar estado a Inactiva (id_estado = 9)
+    // Eliminación lógica: buscar estado por código
+    const estadoInactiva = await getEstadoByCodigo('INSTITUCION', 'INACTIVA');
+    if (!estadoInactiva) {
+      return res.status(500).json({ error: "Estado 'INACTIVA' no encontrado en la base de datos" });
+    }
+
     await prisma.institucion.update({
       where: { id_institucion: id },
-      data: { id_estado: 9 }
+      data: { id_estado: estadoInactiva.id_estado }
     });
     
     res.json({ message: 'Institución eliminada (inactiva)' });
@@ -360,16 +379,17 @@ router.post('/:id/miembros', authenticateToken, requirePermission('instituciones
     }
 
     // Obtener estado activo para miembros de institución
-    const estadoActivo = await prisma.estado.findFirst({
-      where: { entidad: 'MIEMBRO', codigo: 'ACTIVO' }
-    });
+    const estadoActivo = await getEstadoByCodigo('MIEMBRO', 'ACTIVO');
+    if (!estadoActivo) {
+      return res.status(500).json({ error: "Estado 'ACTIVO' no encontrado en la base de datos" });
+    }
 
     const newRelacion = await prisma.miembroInstitucion.create({
       data: {
         id_miembro,
         id_institucion: id,
         rol: rol || 'MIEMBRO',
-        id_estado: estadoActivo?.id_estado || 1,
+        id_estado: estadoActivo.id_estado,
         fecha_ingreso: new Date()
       },
       include: {
@@ -425,9 +445,10 @@ router.post('/:id/cargos', authenticateToken, requirePermission('instituciones',
     }
 
     // Obtener estado activo para cargos
-    const estadoActivo = await prisma.estado.findFirst({
-      where: { entidad: 'MIEMBRO', codigo: 'ACTIVO' }
-    });
+    const estadoActivo = await getEstadoByCodigo('MIEMBRO', 'ACTIVO');
+    if (!estadoActivo) {
+      return res.status(500).json({ error: "Estado 'ACTIVO' no encontrado en la base de datos" });
+    }
 
     // Si el miembro ya tiene un cargo activo, cerrarlo
     await prisma.cargoInstitucion.updateMany({
@@ -447,7 +468,7 @@ router.post('/:id/cargos', authenticateToken, requirePermission('instituciones',
         id_institucion: id,
         rol,
         fecha_inicio: fecha_inicio ? new Date(fecha_inicio) : new Date(),
-        id_estado: estadoActivo?.id_estado || 1
+        id_estado: estadoActivo.id_estado
       },
       include: {
         miembro: true,
