@@ -54,6 +54,11 @@ router.get('/:entidad', authenticateToken, async (req: AuthRequest, res: Respons
   try {
     const { entidad } = req.params;
     
+    // Validar que entidad es un string
+    if (Array.isArray(entidad)) {
+      return res.status(400).json({ error: 'Parámetro inválido' });
+    }
+    
     const estados = await prisma.estado.findMany({
       where: { entidad: entidad.toUpperCase() },
       orderBy: { nombre: 'asc' }

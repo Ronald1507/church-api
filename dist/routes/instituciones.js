@@ -7,6 +7,7 @@ const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
+const estados_1 = require("../utils/estados");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -14,8 +15,14 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Get metadata for institucion form - MUST BE BEFORE /:id
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('instituciones', 'leer'), async (req, res) => {
+// Helper to get numeric ID from any param
+const getNumericId = (param) => {
+    const value = Array.isArray(param) ? param[0] : param;
+    const num = parseInt(value);
+    return isNaN(num) ? null : num;
+};
+// Get options for institucion form - MUST BE BEFORE /:id
+router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('instituciones', 'leer'), async (req, res) => {
     try {
         let congregacionFilter = {};
         const { nivel } = req.user || {};
@@ -50,14 +57,13 @@ router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermissio
         res.status(500).json({ error: 'Error al obtener metadatos' });
     }
 });
-// Get all instituciones - filtrado por congregación y solo activas
+// Get all instituciones - filtrado por congregación
 router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('instituciones', 'leer'), async (req, res) => {
     try {
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
         const instituciones = await db_1.default.institucion.findMany({
             where: {
-                ...congregacionFilter,
-                id_estado: 8 // Solo instituciones activas
+                ...congregacionFilter
             },
             include: {
                 congregacion: true,
@@ -72,7 +78,43 @@ router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('
         res.status(500).json({ error: 'Error al obtener instituciones' });
     }
 });
-// Get institucion by ID - filtrado por congregación
+// Get instituciones by estado - valida que el estado pertenezca a INSTITUCION
+router.get('/estado/:idEstado', auth_1.authenticateToken, (0, permissions_1.requirePermission)('instituciones', 'leer'), async (req, res) => {
+    try {
+        const idEstado = getNumericId(req.params.idEstado);
+        if (idEstado === null) {
+            return res.status(400).json({ error: 'ID de estado inválido' });
+        }
+        // Validar que el estado pertenece a la entidad INSTITUCION
+        const estado = await db_1.default.estado.findUnique({
+            where: { id_estado: idEstado }
+        });
+        if (!estado) {
+            return res.status(404).json({ error: 'Estado no encontrado' });
+        }
+        if (estado.entidad !== 'INSTITUCION') {
+            return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad INSTITUCION` });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const instituciones = await db_1.default.institucion.findMany({
+            where: {
+                ...congregacionFilter,
+                id_estado: idEstado
+            },
+            include: {
+                congregacion: true,
+                estado: true
+            },
+            orderBy: { nombre: 'asc' }
+        });
+        res.json(instituciones);
+    }
+    catch (error) {
+        console.error('Error getting instituciones by estado:', error);
+        res.status(500).json({ error: 'Error al obtener instituciones' });
+    }
+});
+// Get institucion by ID - DEBE SER ÚLTIMO
 router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('instituciones', 'leer'), async (req, res) => {
     try {
         const id = getId(req);
@@ -199,10 +241,14 @@ router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermiss
         if (!existingInstitucion) {
             return res.status(404).json({ error: 'Institución no encontrada' });
         }
-        // Eliminación lógica: cambiar estado a Inactiva (id_estado = 9)
+        // Eliminación lógica: buscar estado por código
+        const estadoInactiva = await (0, estados_1.getEstadoByCodigo)('INSTITUCION', 'INACTIVA');
+        if (!estadoInactiva) {
+            return res.status(500).json({ error: "Estado 'INACTIVA' no encontrado en la base de datos" });
+        }
         await db_1.default.institucion.update({
             where: { id_institucion: id },
-            data: { id_estado: 9 }
+            data: { id_estado: estadoInactiva.id_estado }
         });
         res.json({ message: 'Institución eliminada (inactiva)' });
     }
@@ -287,15 +333,16 @@ router.post('/:id/miembros', auth_1.authenticateToken, (0, permissions_1.require
             return res.status(404).json({ error: 'Miembro no encontrado en esta congregación' });
         }
         // Obtener estado activo para miembros de institución
-        const estadoActivo = await db_1.default.estado.findFirst({
-            where: { entidad: 'MIEMBRO', codigo: 'ACTIVO' }
-        });
+        const estadoActivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ACTIVO');
+        if (!estadoActivo) {
+            return res.status(500).json({ error: "Estado 'ACTIVO' no encontrado en la base de datos" });
+        }
         const newRelacion = await db_1.default.miembroInstitucion.create({
             data: {
                 id_miembro,
                 id_institucion: id,
                 rol: rol || 'MIEMBRO',
-                id_estado: estadoActivo?.id_estado || 1,
+                id_estado: estadoActivo.id_estado,
                 fecha_ingreso: new Date()
             },
             include: {
@@ -342,9 +389,10 @@ router.post('/:id/cargos', auth_1.authenticateToken, (0, permissions_1.requirePe
             return res.status(400).json({ error: 'El miembro no pertenece a esta institución' });
         }
         // Obtener estado activo para cargos
-        const estadoActivo = await db_1.default.estado.findFirst({
-            where: { entidad: 'MIEMBRO', codigo: 'ACTIVO' }
-        });
+        const estadoActivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ACTIVO');
+        if (!estadoActivo) {
+            return res.status(500).json({ error: "Estado 'ACTIVO' no encontrado en la base de datos" });
+        }
         // Si el miembro ya tiene un cargo activo, cerrarlo
         await db_1.default.cargoInstitucion.updateMany({
             where: {
@@ -362,7 +410,7 @@ router.post('/:id/cargos', auth_1.authenticateToken, (0, permissions_1.requirePe
                 id_institucion: id,
                 rol,
                 fecha_inicio: fecha_inicio ? new Date(fecha_inicio) : new Date(),
-                id_estado: estadoActivo?.id_estado || 1
+                id_estado: estadoActivo.id_estado
             },
             include: {
                 miembro: true,

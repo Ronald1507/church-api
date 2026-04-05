@@ -7,6 +7,7 @@ const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
+const estados_1 = require("../utils/estados");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -14,9 +15,15 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// ==================== METADATA - MUST BE BEFORE /:id ====================
-// Get metadata for inventory forms
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
+// Helper to get numeric ID from any param
+const getNumericId = (param) => {
+    const value = Array.isArray(param) ? param[0] : param;
+    const num = parseInt(value);
+    return isNaN(num) ? null : num;
+};
+// ==================== OPCIONES - MUST BE BEFORE /:id ====================
+// Get options for inventory forms
+router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
     try {
         let congregacionFilter = {};
         const { nivel } = req.user || {};
@@ -62,6 +69,42 @@ router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('
         res.status(500).json({ error: 'Error al obtener items' });
     }
 });
+// Get items by estado - dinámico
+router.get('/estado/:idEstado', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
+    try {
+        const idEstado = getNumericId(req.params.idEstado);
+        if (idEstado === null) {
+            return res.status(400).json({ error: 'ID de estado inválido' });
+        }
+        // Validar que el estado pertenece a la entidad INVENTARIO
+        const estado = await db_1.default.estado.findUnique({
+            where: { id_estado: idEstado }
+        });
+        if (!estado) {
+            return res.status(404).json({ error: 'Estado no encontrado' });
+        }
+        if (estado.entidad !== 'INVENTARIO') {
+            return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad INVENTARIO` });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const items = await db_1.default.inventarioItem.findMany({
+            where: {
+                ...congregacionFilter,
+                id_estado: idEstado
+            },
+            include: {
+                congregacion: true,
+                estado: true
+            },
+            orderBy: { nombre: 'asc' }
+        });
+        res.json(items);
+    }
+    catch (error) {
+        console.error('Error getting items by estado:', error);
+        res.status(500).json({ error: 'Error al obtener items' });
+    }
+});
 // Get item by ID - filtrado por congregación
 router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
     try {
@@ -83,7 +126,7 @@ router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission
                     take: 20
                 },
                 prestamos: {
-                    include: { ministerios: true, estado: true }
+                    include: { institucion: true, estado: true }
                 }
             }
         });
@@ -198,12 +241,16 @@ router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermiss
         if (!existingItem) {
             return res.status(404).json({ error: 'Item no encontrado' });
         }
-        // Eliminación lógica: cambiar estado a Descontinuado
+        // Eliminación lógica: buscar estado por código
+        const estadoBaja = await (0, estados_1.getEstadoByCodigo)('INVENTARIO', 'BAJA');
+        if (!estadoBaja) {
+            return res.status(500).json({ error: "Estado 'BAJA' no encontrado en la base de datos" });
+        }
         await db_1.default.inventarioItem.update({
             where: { id_item: id },
-            data: { id_estado: 17 } // ID de estado Descontinuado para INVENTARIO
+            data: { id_estado: estadoBaja.id_estado }
         });
-        res.json({ message: 'Item eliminado (descontinuado)' });
+        res.json({ message: 'Item dado de baja' });
     }
     catch (error) {
         console.error('Error deleting item:', error);

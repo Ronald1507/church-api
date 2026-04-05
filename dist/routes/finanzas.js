@@ -7,6 +7,7 @@ const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
+const estados_1 = require("../utils/estados");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -14,9 +15,15 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// ==================== METADATA - MUST BE BEFORE OTHER ROUTES ====================
-// Get metadata for finance forms
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'leer'), async (req, res) => {
+// Helper to get numeric ID from any param
+const getNumericId = (param) => {
+    const value = Array.isArray(param) ? param[0] : param;
+    const num = parseInt(value);
+    return isNaN(num) ? null : num;
+};
+// ==================== OPCIONES - MUST BE BEFORE OTHER ROUTES ====================
+// Get options for finance forms
+router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'leer'), async (req, res) => {
     try {
         let congregacionFilter = {};
         const { nivel } = req.user || {};
@@ -59,6 +66,42 @@ router.get('/cuentas', auth_1.authenticateToken, (0, permissions_1.requirePermis
     }
     catch (error) {
         console.error('Error getting cuentas:', error);
+        res.status(500).json({ error: 'Error al obtener cuentas' });
+    }
+});
+// Get cuentas by estado - dinámico
+router.get('/cuentas/estado/:idEstado', auth_1.authenticateToken, (0, permissions_1.requirePermission)('finanzas', 'leer'), async (req, res) => {
+    try {
+        const idEstado = getNumericId(req.params.idEstado);
+        if (idEstado === null) {
+            return res.status(400).json({ error: 'ID de estado inválido' });
+        }
+        // Validar que el estado pertenece a la entidad FINANZA_CUENTA
+        const estado = await db_1.default.estado.findUnique({
+            where: { id_estado: idEstado }
+        });
+        if (!estado) {
+            return res.status(404).json({ error: 'Estado no encontrado' });
+        }
+        if (estado.entidad !== 'FINANZA_CUENTA') {
+            return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad FINANZA_CUENTA` });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const cuentas = await db_1.default.finanzaCuenta.findMany({
+            where: {
+                ...congregacionFilter,
+                id_estado: idEstado
+            },
+            include: {
+                congregacion: true,
+                estado: true
+            },
+            orderBy: { nombre: 'asc' }
+        });
+        res.json(cuentas);
+    }
+    catch (error) {
+        console.error('Error getting cuentas by estado:', error);
         res.status(500).json({ error: 'Error al obtener cuentas' });
     }
 });
@@ -192,10 +235,14 @@ router.delete('/cuentas/:id', auth_1.authenticateToken, (0, permissions_1.requir
         if (!existingCuenta) {
             return res.status(404).json({ error: 'Cuenta no encontrada' });
         }
-        // Eliminación lógica: cambiar estado a Inactiva
+        // Eliminación lógica: buscar estado por código
+        const estadoInactiva = await (0, estados_1.getEstadoByCodigo)('FINANZA_CUENTA', 'INACTIVA');
+        if (!estadoInactiva) {
+            return res.status(500).json({ error: "Estado 'INACTIVA' no encontrado en la base de datos" });
+        }
         await db_1.default.finanzaCuenta.update({
             where: { id_cuenta: id },
-            data: { id_estado: 14 } // ID de estado Inactiva para CUENTA
+            data: { id_estado: estadoInactiva.id_estado }
         });
         res.json({ message: 'Cuenta eliminada (inactiva)' });
     }
@@ -320,12 +367,16 @@ router.delete('/transacciones/:id', auth_1.authenticateToken, (0, permissions_1.
         if (!transaccion) {
             return res.status(404).json({ error: 'Transacción no encontrada' });
         }
-        // Eliminación lógica: cambiar estado a Anulado (no ajusta saldo para mantener integridad)
+        // Eliminación lógica: buscar estado por código
+        const estadoCancelada = await (0, estados_1.getEstadoByCodigo)('TRANSACCION', 'CANCELADA');
+        if (!estadoCancelada) {
+            return res.status(500).json({ error: "Estado 'CANCELADA' no encontrado en la base de datos" });
+        }
         await db_1.default.transaccion.update({
             where: { id_transaccion: id },
-            data: { id_estado: 15 } // ID de estado Anulado para TRANSACCION
+            data: { id_estado: estadoCancelada.id_estado }
         });
-        res.json({ message: 'Transacción eliminada (anulada)' });
+        res.json({ message: 'Transacción eliminada (cancelada)' });
     }
     catch (error) {
         console.error('Error deleting transaccion:', error);

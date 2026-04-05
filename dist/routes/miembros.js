@@ -7,16 +7,21 @@ const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
+const estados_1 = require("../utils/estados");
 console.log("===-miembros.ts loaded===");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
-    const id = req.params.id;
-    const num = typeof id === "string" ? parseInt(id) : parseInt(id?.[0] || "");
+    return getNumericId(req.params.id);
+};
+// Helper to get numeric ID from any param
+const getNumericId = (param) => {
+    const value = Array.isArray(param) ? param[0] : param;
+    const num = parseInt(value);
     return isNaN(num) ? null : num;
 };
 // Get member types
-router.get("/meta/tipos", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
+router.get("/opciones/tipos", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
         const tipos = await db_1.default.tipoMiembro.findMany({
             orderBy: { nombre: "asc" },
@@ -67,17 +72,13 @@ router.get("/opciones", auth_1.authenticateToken, (0, permissions_1.requirePermi
         res.status(500).json({ error: "Error al obtener metadatos" });
     }
 });
-// Get all members - solo activos por defecto
+// Get all members - retorna todos los miembros
 router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
-        console.log("[GET /miembros] Request received");
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
-        const includeInactivos = req.query.inactivos === 'true';
-        console.log("[GET /miembros] includeInactivos:", includeInactivos);
         const miembros = await db_1.default.miembro.findMany({
             where: {
-                ...congregacionFilter,
-                ...(includeInactivos ? {} : { id_estado: 5 }) // Solo activos si no se pide inactivos
+                ...congregacionFilter
             },
             take: 100,
             include: {
@@ -86,7 +87,6 @@ router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("
                 tipoMiembro: true
             }
         });
-        console.log("[GET /miembros] Found:", miembros.length, "members");
         res.json(miembros);
     }
     catch (error) {
@@ -94,17 +94,28 @@ router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("
         res.status(500).json({ error: "Error al obtener miembros" });
     }
 });
-// Get all members - solo activos por defecto
-router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
+// Get members by estado - valida que el estado pertenezca a MIEMBRO
+router.get("/estado/:idEstado", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
     try {
-        console.log("[GET /miembros] Request received");
+        const idEstado = getNumericId(req.params.idEstado);
+        if (idEstado === null) {
+            return res.status(400).json({ error: "ID de estado inválido" });
+        }
+        // Validar que el estado pertenece a la entidad MIEMBRO
+        const estado = await db_1.default.estado.findUnique({
+            where: { id_estado: idEstado }
+        });
+        if (!estado) {
+            return res.status(404).json({ error: "Estado no encontrado" });
+        }
+        if (estado.entidad !== 'MIEMBRO') {
+            return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad MIEMBRO` });
+        }
         const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
-        const includeInactivos = req.query.inactivos === 'true';
-        console.log("[GET /miembros] includeInactivos:", includeInactivos);
         const miembros = await db_1.default.miembro.findMany({
             where: {
                 ...congregacionFilter,
-                ...(includeInactivos ? {} : { id_estado: 5 }) // Solo activos si no se pide inactivos
+                id_estado: idEstado
             },
             take: 100,
             include: {
@@ -113,36 +124,10 @@ router.get("/", auth_1.authenticateToken, (0, permissions_1.requirePermission)("
                 tipoMiembro: true
             }
         });
-        console.log("[GET /miembros] Found:", miembros.length, "members");
         res.json(miembros);
     }
     catch (error) {
-        console.error("Error getting miembros:", error);
-        res.status(500).json({ error: "Error al obtener miembros" });
-    }
-});
-// Get all members including inactivos - solo inactivos (estado 6)
-router.get("/todos", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "leer"), async (req, res) => {
-    try {
-        console.log("[GET /miembros/todos] Request received");
-        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
-        const miembros = await db_1.default.miembro.findMany({
-            where: {
-                ...congregacionFilter,
-                id_estado: 6 // Solo inactivos
-            },
-            take: 100,
-            include: {
-                estado: true,
-                congregacion: true,
-                tipoMiembro: true
-            }
-        });
-        console.log("[GET /miembros/todos] Found:", miembros.length, "inactive members");
-        res.json(miembros);
-    }
-    catch (error) {
-        console.error("Error getting todos los miembros:", error);
+        console.error("Error getting members by estado:", error);
         res.status(500).json({ error: "Error al obtener miembros" });
     }
 });
@@ -303,6 +288,7 @@ router.put("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission
 // Delete member (eliminación lógica)
 router.delete("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermission)("miembros", "eliminar"), async (req, res) => {
     try {
+        console.log(">>> DELETE /:id reached with params:", req.params);
         const memberId = getId(req);
         if (memberId === null) {
             return res
@@ -320,16 +306,14 @@ router.delete("/:id", auth_1.authenticateToken, (0, permissions_1.requirePermiss
         if (!existingMiembro) {
             return res.status(404).json({ error: "Miembro no encontrado" });
         }
-        // Eliminación lógica: cambiar estado a Eliminado (buscar el estado correcto de la DB)
-        const estadoEliminado = await db_1.default.estado.findFirst({
-            where: {
-                entidad: 'MIEMBRO',
-                codigo: 'ELIMINADO'
-            }
-        });
+        // Eliminación lógica: buscar estado por código en vez de ID hardcodeado
+        const estadoEliminado = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ELIMINADO');
+        if (!estadoEliminado) {
+            return res.status(500).json({ error: "Estado 'ELIMINADO' no encontrado en la base de datos" });
+        }
         await db_1.default.miembro.update({
             where: { id_miembro: memberId },
-            data: { id_estado: estadoEliminado?.id_estado || 7 } // ID 7 = Eliminado, o el que venga de DB
+            data: { id_estado: estadoEliminado.id_estado }
         });
         res.json({ message: "Miembro eliminado" });
     }
@@ -355,13 +339,20 @@ router.patch("/:id/status", auth_1.authenticateToken, (0, permissions_1.requireP
         if (!existingMiembro) {
             return res.status(404).json({ error: "Miembro no encontrado" });
         }
-        // Toggle: si está inactivo(6) -> activo(5), si está activo(5) -> inactivo(6)
-        const nuevoEstado = existingMiembro.id_estado === 5 ? 6 : 5;
+        // Toggle: buscar estados por código en vez de IDs hardcodeados
+        const estadoActivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ACTIVO');
+        const estadoInactivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'INACTIVO');
+        if (!estadoActivo || !estadoInactivo) {
+            return res.status(500).json({ error: "Estados 'ACTIVO' o 'INACTIVO' no encontrados en la base de datos" });
+        }
+        const nuevoEstado = existingMiembro.id_estado === estadoActivo.id_estado
+            ? estadoInactivo.id_estado
+            : estadoActivo.id_estado;
         await db_1.default.miembro.update({
             where: { id_miembro: memberId },
             data: { id_estado: nuevoEstado }
         });
-        res.json({ message: nuevoEstado === 5 ? "Miembro activado" : "Miembro inactivado" });
+        res.json({ message: nuevoEstado === estadoActivo.id_estado ? "Miembro activado" : "Miembro inactivado" });
     }
     catch (error) {
         console.error("Toggle miembro status error:", error);

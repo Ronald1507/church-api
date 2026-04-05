@@ -8,6 +8,7 @@ const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const db_1 = __importDefault(require("../config/db"));
 const auth_1 = require("../middleware/auth");
+const estados_1 = require("../utils/estados");
 const router = (0, express_1.Router)();
 // Login - acepta email o username
 router.post('/login', async (req, res) => {
@@ -90,13 +91,18 @@ router.post('/register', async (req, res) => {
         const hashedPassword = await bcrypt_1.default.hash(password, 10);
         // Default role: 2 (Usuario) if not specified
         const roleId = id_rol || 2;
+        // Buscar estado activo dinámicamente
+        const estadoActivo = await (0, estados_1.getEstadoByCodigo)('USUARIO', 'ACTIVO');
+        if (!estadoActivo) {
+            return res.status(500).json({ error: "Estado 'ACTIVO' no encontrado en la base de datos" });
+        }
         const newUser = await db_1.default.usuarioSistema.create({
             data: {
                 username,
                 password_hash: hashedPassword,
                 email,
                 id_rol: roleId,
-                id_estado: 1, // Activo
+                id_estado: estadoActivo.id_estado,
                 id_miembro: id_miembro || null
             },
             include: { rol: true }

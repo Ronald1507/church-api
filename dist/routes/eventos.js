@@ -7,6 +7,7 @@ const express_1 = require("express");
 const db_1 = __importDefault(require("../config/db"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
+const estados_1 = require("../utils/estados");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -14,8 +15,14 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Get metadata for evento form - MUST BE BEFORE /:id
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
+// Helper to get numeric ID from any param
+const getNumericId = (param) => {
+    const value = Array.isArray(param) ? param[0] : param;
+    const num = parseInt(value);
+    return isNaN(num) ? null : num;
+};
+// Get options for evento form - MUST BE BEFORE /:id
+router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
     try {
         let congregacionFilter = {};
         const { nivel } = req.user || {};
@@ -57,6 +64,42 @@ router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('
     }
     catch (error) {
         console.error('Error getting eventos:', error);
+        res.status(500).json({ error: 'Error al obtener eventos' });
+    }
+});
+// Get eventos by estado - dinámico
+router.get('/estado/:idEstado', auth_1.authenticateToken, (0, permissions_1.requirePermission)('eventos', 'leer'), async (req, res) => {
+    try {
+        const idEstado = getNumericId(req.params.idEstado);
+        if (idEstado === null) {
+            return res.status(400).json({ error: 'ID de estado inválido' });
+        }
+        // Validar que el estado pertenece a la entidad EVENTO
+        const estado = await db_1.default.estado.findUnique({
+            where: { id_estado: idEstado }
+        });
+        if (!estado) {
+            return res.status(404).json({ error: 'Estado no encontrado' });
+        }
+        if (estado.entidad !== 'EVENTO') {
+            return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad EVENTO` });
+        }
+        const congregacionFilter = (0, auth_1.getCongregacionFilter)(req.user);
+        const eventos = await db_1.default.evento.findMany({
+            where: {
+                ...congregacionFilter,
+                id_estado: idEstado
+            },
+            include: {
+                congregacion: true,
+                estado: true
+            },
+            orderBy: { fecha_inicio: 'desc' }
+        });
+        res.json(eventos);
+    }
+    catch (error) {
+        console.error('Error getting eventos by estado:', error);
         res.status(500).json({ error: 'Error al obtener eventos' });
     }
 });
@@ -198,10 +241,14 @@ router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermiss
         if (!existingEvento) {
             return res.status(404).json({ error: 'Evento no encontrado' });
         }
-        // Eliminación lógica: cambiar estado a Cancelado
+        // Eliminación lógica: buscar estado por código
+        const estadoCancelado = await (0, estados_1.getEstadoByCodigo)('EVENTO', 'CANCELADO');
+        if (!estadoCancelado) {
+            return res.status(500).json({ error: "Estado 'CANCELADO' no encontrado en la base de datos" });
+        }
         await db_1.default.evento.update({
             where: { id_evento: id },
-            data: { id_estado: 11 } // ID de estado Cancelado para EVENTO
+            data: { id_estado: estadoCancelado.id_estado }
         });
         res.json({ message: 'Evento eliminado (cancelado)' });
     }

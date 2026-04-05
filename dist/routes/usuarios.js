@@ -8,6 +8,7 @@ const db_1 = __importDefault(require("../config/db"));
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const auth_1 = require("../middleware/auth");
 const permissions_1 = require("../middleware/permissions");
+const estados_1 = require("../utils/estados");
 const router = (0, express_1.Router)();
 // Helper to get numeric ID from params
 const getId = (req) => {
@@ -15,9 +16,18 @@ const getId = (req) => {
     const num = typeof id === 'string' ? parseInt(id) : parseInt(id?.[0] || '');
     return isNaN(num) ? null : num;
 };
-// Get metadata for user form - MUST BE BEFORE /:id
-router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
+// Helper to get numeric ID from any param
+const getNumericId = (param) => {
+    const value = Array.isArray(param) ? param[0] : param;
+    const num = parseInt(value);
+    return isNaN(num) ? null : num;
+};
+// Get options for user form - MUST BE BEFORE /:id
+router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     try {
+        // Buscar estado activo dinámicamente para filtrar miembros
+        const estadoActivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ACTIVO');
+        const miembroFilter = estadoActivo ? { id_estado: estadoActivo.id_estado } : {};
         const [roles, estados, miembros, congregaciones] = await Promise.all([
             db_1.default.rolSistema.findMany({
                 orderBy: { nombre: 'asc' }
@@ -27,7 +37,7 @@ router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermissio
                 orderBy: { nombre: 'asc' }
             }),
             db_1.default.miembro.findMany({
-                where: { id_estado: 1 },
+                where: miembroFilter,
                 orderBy: { nombres: 'asc' }
             }),
             db_1.default.congregacion.findMany({
@@ -45,17 +55,22 @@ router.get('/meta', auth_1.authenticateToken, (0, permissions_1.requirePermissio
 // Get all users - SuperAdmin ve todos, Admin ve solo los de su congregación
 router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     const { nivel, id_congregacion } = req.user || {};
+    // Si no es SuperAdmin, filtrar por congregación
     const where = nivel === 'SUPERADMIN'
         ? {}
-        : { id_congregacion };
+        : { id_congregacion: id_congregacion || undefined };
+    // Si es Admin pero no tiene congregación, no puede ver usuarios
+    if (nivel === 'ADMIN' && !id_congregacion) {
+        return res.json([]);
+    }
     try {
         const usuarios = await db_1.default.usuarioSistema.findMany({
             where,
             include: {
                 rol: true,
                 estado: true,
-                congregacion: true,
-                miembro: true
+                congregacion: true
+                // NOTA: miembro no tiene relación en schema, se elimina
             },
             orderBy: { username: 'asc' }
         });
@@ -63,6 +78,48 @@ router.get('/', auth_1.authenticateToken, (0, permissions_1.requirePermission)('
     }
     catch (error) {
         console.error('Error getting usuarios:', error);
+        res.status(500).json({ error: 'Error al obtener usuarios' });
+    }
+});
+// Get users by estado - dinámico
+router.get('/estado/:idEstado', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
+    const { nivel, id_congregacion } = req.user || {};
+    const idEstado = getNumericId(req.params.idEstado);
+    if (idEstado === null) {
+        return res.status(400).json({ error: 'ID de estado inválido' });
+    }
+    // Validar que el estado pertenece a la entidad USUARIO
+    const estado = await db_1.default.estado.findUnique({
+        where: { id_estado: idEstado }
+    });
+    if (!estado) {
+        return res.status(404).json({ error: 'Estado no encontrado' });
+    }
+    if (estado.entidad !== 'USUARIO') {
+        return res.status(400).json({ error: `El estado ${idEstado} no pertenece a la entidad USUARIO` });
+    }
+    // Si no es SuperAdmin, filtrar por congregación
+    if (nivel === 'ADMIN' && !id_congregacion) {
+        return res.json([]);
+    }
+    const usersWhere = nivel === 'SUPERADMIN'
+        ? { id_estado: idEstado }
+        : { id_congregacion: id_congregacion || undefined, id_estado: idEstado };
+    try {
+        const usuarios = await db_1.default.usuarioSistema.findMany({
+            where: usersWhere,
+            include: {
+                rol: true,
+                estado: true,
+                congregacion: true
+                // NOTA: miembro no tiene relación en schema
+            },
+            orderBy: { username: 'asc' }
+        });
+        res.json(usuarios);
+    }
+    catch (error) {
+        console.error('Error getting usuarios by estado:', error);
         res.status(500).json({ error: 'Error al obtener usuarios' });
     }
 });
@@ -78,8 +135,8 @@ router.get('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermission
             include: {
                 rol: true,
                 estado: true,
-                congregacion: true,
-                miembro: true
+                congregacion: true
+                // NOTA: miembro no tiene relación en schema
             }
         });
         if (!usuario) {
@@ -180,10 +237,14 @@ router.delete('/:id', auth_1.authenticateToken, (0, permissions_1.requirePermiss
         if (id === req.user?.userId) {
             return res.status(400).json({ error: 'No puedes eliminar tu propio usuario' });
         }
-        // Eliminación lógica: cambiar estado a Inactivo
+        // Eliminación lógica: buscar estado por código
+        const estadoInactivo = await (0, estados_1.getEstadoByCodigo)('USUARIO', 'INACTIVO');
+        if (!estadoInactivo) {
+            return res.status(500).json({ error: "Estado 'INACTIVO' no encontrado en la base de datos" });
+        }
         await db_1.default.usuarioSistema.update({
             where: { id_usuario: id },
-            data: { id_estado: 2 } // ID de estado Inactivo para USUARIO
+            data: { id_estado: estadoInactivo.id_estado }
         });
         res.json({ message: 'Usuario eliminado (inactivo)' });
     }
