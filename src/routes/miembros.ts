@@ -9,8 +9,6 @@ import { requirePermission } from "../middleware/permissions";
 import { getEstadoByCodigo } from "../utils/estados";
 import { ApiResponse, sendResponse } from "../utils/response";
 
-console.log("===-miembros.ts loaded===");
-
 const router = Router();
 
 // Helper to get numeric ID from params
@@ -18,61 +16,96 @@ const getId = (req: Request): number | null => {
 	return getNumericId(req.params.id);
 };
 
-// Helper to get numeric ID from any param
 const getNumericId = (param: string | string[]): number | null => {
 	const value = Array.isArray(param) ? param[0] : param;
 	const num = parseInt(value);
 	return isNaN(num) ? null : num;
 };
 
-// Get member types
+// ============================================
+// LISTADOS SEPARADOS (uno para cada cosa)
+// ============================================
+
+// Listado de estados de miembros
 router.get(
-	"/opciones/tipos",
+	"/listado/estados",
+	authenticateToken,
+	requirePermission("miembros", "leer"),
+	async (req: AuthRequest, res: Response) => {
+		try {
+			const estados = await prisma.estado.findMany({
+				where: { entidad: "MIEMBRO" },
+				orderBy: { nombre: "asc" }
+			});
+			return sendResponse(res, ApiResponse.success(estados));
+		} catch (error) {
+			return sendResponse(res, ApiResponse.error('Error al obtener estados', error));
+		}
+	}
+);
+
+// Listado de congregaciones para miembros
+router.get(
+	"/listado/congregaciones",
+	authenticateToken,
+	requirePermission("miembros", "leer"),
+	async (req: AuthRequest, res: Response) => {
+		try {
+			const congregacionFilter = getCongregacionFilter(req.user);
+			const congregaciones = await prisma.congregacion.findMany({
+				where: congregacionFilter,
+				include: { estado: true },
+				orderBy: { nombre: "asc" }
+			});
+			return sendResponse(res, ApiResponse.success(congregaciones));
+		} catch (error) {
+			return sendResponse(res, ApiResponse.error('Error al obtener congregaciones', error));
+		}
+	}
+);
+
+// Listado de tipos de miembro
+router.get(
+	"/listado/tipos",
 	authenticateToken,
 	requirePermission("miembros", "leer"),
 	async (req: AuthRequest, res: Response) => {
 		try {
 			const tipos = await prisma.tipoMiembro.findMany({
-				orderBy: { nombre: "asc" },
+				orderBy: { nombre: "asc" }
 			});
-			return sendResponse(res, ApiResponse.success(tipos, 'Tipos de miembro obtenidos'));
+			return sendResponse(res, ApiResponse.success(tipos));
 		} catch (error) {
-			console.error("Error getting tipos:", error);
-			return sendResponse(res, ApiResponse.error('Error al obtener tipos de miembro', error));
+			return sendResponse(res, ApiResponse.error('Error al obtener tipos', error));
 		}
-	},
+	}
 );
 
-// Get metadata for member form (estados, congregaciones, tipos)
+// Listado de instituciones para miembros
 router.get(
-	"/opciones",
+	"/listado/instituciones",
 	authenticateToken,
 	requirePermission("miembros", "leer"),
 	async (req: AuthRequest, res: Response) => {
 		try {
-			let congregacionFilter = {};
-			const { nivel } = req.user || {};
-
-			if (nivel !== "ADMIN" && req.user?.id_congregacion) {
-				congregacionFilter = { id_congregacion: req.user.id_congregacion };
-			}
-
-			const [estados, congregaciones, tipos, instituciones] = await Promise.all([
-				prisma.estado.findMany({ where: { entidad: "MIEMBRO" }, orderBy: { nombre: "asc" } }),
-				prisma.congregacion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: "asc" } }),
-				prisma.tipoMiembro.findMany({ orderBy: { nombre: "asc" } }),
-				prisma.institucion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: "asc" } }),
-			]);
-
-			return sendResponse(res, ApiResponse.success({ estados, congregaciones, tipos, instituciones }));
+			const congregacionFilter = getCongregacionFilter(req.user);
+			const instituciones = await prisma.institucion.findMany({
+				where: congregacionFilter,
+				include: { estado: true },
+				orderBy: { nombre: "asc" }
+			});
+			return sendResponse(res, ApiResponse.success(instituciones));
 		} catch (error) {
-			console.error("Get metadata error:", error);
-			return sendResponse(res, ApiResponse.error('Error al obtener metadatos', error));
+			return sendResponse(res, ApiResponse.error('Error al obtener instituciones', error));
 		}
-	},
+	}
 );
 
-// Get all members
+// ============================================
+// CRUD
+// ============================================
+
+// GET all members
 router.get("/", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
 	try {
 		const congregacionFilter = getCongregacionFilter(req.user);
@@ -80,17 +113,21 @@ router.get("/", authenticateToken, requirePermission("miembros", "leer"), async 
 		const miembros = await prisma.miembro.findMany({ 
 			where: { ...congregacionFilter },
 			take: 100,
-			include: { estado: true, congregacion: true, tipoMiembro: true }
+			include: { 
+				estado: true, 
+				congregacion: true, 
+				tipoMiembro: true,
+				miembroInstitucions: { include: { institucion: true } }
+			}
 		});
 		
-		return sendResponse(res, ApiResponse.success(miembros, 'Miembros obtenidos'));
+		return sendResponse(res, ApiResponse.success(miembros));
 	} catch (error) {
-		console.error("Error getting miembros:", error);
 		return sendResponse(res, ApiResponse.error('Error al obtener miembros', error));
 	}
 });
 
-// Get members by estado
+// GET members by estado
 router.get("/estado/:idEstado", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
 	try {
 		const idEstado = getNumericId(req.params.idEstado);
@@ -105,7 +142,7 @@ router.get("/estado/:idEstado", authenticateToken, requirePermission("miembros",
 		}
 		
 		if (estado.entidad !== 'MIEMBRO') {
-			return sendResponse(res, ApiResponse.validationError(`El estado ${idEstado} no pertenece a la entidad MIEMBRO`));
+			return sendResponse(res, ApiResponse.validationError(`El estado no pertenece a MIEMBRO`));
 		}
 		
 		const congregacionFilter = getCongregacionFilter(req.user);
@@ -115,14 +152,13 @@ router.get("/estado/:idEstado", authenticateToken, requirePermission("miembros",
 			include: { estado: true, congregacion: true, tipoMiembro: true }
 		});
 		
-		return sendResponse(res, ApiResponse.success(miembros, 'Miembros obtenidos por estado'));
+		return sendResponse(res, ApiResponse.success(miembros));
 	} catch (error) {
-		console.error("Error getting members by estado:", error);
 		return sendResponse(res, ApiResponse.error('Error al obtener miembros', error));
 	}
 });
 
-// Get member by ID
+// GET member by ID
 router.get("/:id", authenticateToken, requirePermission("miembros", "leer"), async (req: AuthRequest, res: Response) => {
 	try {
 		const memberId = getId(req);
@@ -156,12 +192,11 @@ router.get("/:id", authenticateToken, requirePermission("miembros", "leer"), asy
 
 		return sendResponse(res, ApiResponse.success(miembro));
 	} catch (error) {
-		console.error("Get miembro error:", error);
 		return sendResponse(res, ApiResponse.error('Error al obtener miembro', error));
 	}
 });
 
-// Create member
+// POST create member
 router.post("/", authenticateToken, requirePermission("miembros", "crear"), async (req: AuthRequest, res: Response) => {
 	try {
 		const { nivel } = req.user || {};
@@ -184,6 +219,7 @@ router.post("/", authenticateToken, requirePermission("miembros", "crear"), asyn
 			return sendResponse(res, ApiResponse.validationError('ID de congregación inválido'));
 		}
 
+		// Crear miembro
 		const newMiembro = await prisma.miembro.create({
 			data: {
 				nombres: input.nombres,
@@ -203,14 +239,39 @@ router.post("/", authenticateToken, requirePermission("miembros", "crear"), asyn
 			include: { estado: true, congregacion: true, tipoMiembro: true },
 		});
 
-		return sendResponse(res, ApiResponse.created(newMiembro, 'Miembro creado correctamente'));
+		// Crear relaciones con instituciones si se proporcionan
+		if (input.instituciones && Array.isArray(input.instituciones)) {
+			const nuevasInstituciones = input.instituciones.map((id: number) => ({
+				id_miembro: newMiembro.id_miembro,
+				id_institucion: parseInt(String(id)),
+				id_estado: 1,
+			}));
+
+			if (nuevasInstituciones.length > 0) {
+				await prisma.miembroInstitucion.createMany({
+					data: nuevasInstituciones
+				});
+			}
+		}
+
+		// Retornar miembro con instituciones
+		const miembroCompleto = await prisma.miembro.findUnique({
+			where: { id_miembro: newMiembro.id_miembro },
+			include: {
+				estado: true,
+				congregacion: true,
+				tipoMiembro: true,
+				miembroInstitucions: { include: { institucion: true } }
+			}
+		});
+
+		return sendResponse(res, ApiResponse.created(miembroCompleto, 'Miembro creado correctamente'));
 	} catch (error) {
-		console.error("Create miembro error:", error);
 		return sendResponse(res, ApiResponse.error('Error al crear miembro', error));
 	}
 });
 
-// Update member
+// PUT update member
 router.put("/:id", authenticateToken, requirePermission("miembros", "actualizar"), async (req: AuthRequest, res: Response) => {
 	try {
 		const memberId = getId(req);
@@ -264,20 +325,52 @@ router.put("/:id", authenticateToken, requirePermission("miembros", "actualizar"
 			delete updateData.id_congregacion;
 		}
 
+		// Actualizar miembro
 		const updatedMiembro = await prisma.miembro.update({
 			where: { id_miembro: memberId },
 			data: updateData,
 			include: { estado: true, congregacion: true, tipoMiembro: true },
 		});
 
-		return sendResponse(res, ApiResponse.updated(updatedMiembro, 'Miembro actualizado correctamente'));
+		// Manejar instituciones (tabla intermedia)
+		if (input.instituciones && Array.isArray(input.instituciones)) {
+			const nuevasInstituciones = input.instituciones.map((id: number) => ({
+				id_miembro: memberId,
+				id_institucion: parseInt(String(id)),
+				id_estado: 1, // Por defecto ACTIVO
+			}));
+
+			// Eliminar instituciones actuales
+			await prisma.miembroInstitucion.deleteMany({
+				where: { id_miembro: memberId }
+			});
+
+			// Crear nuevas relaciones
+			if (nuevasInstituciones.length > 0) {
+				await prisma.miembroInstitucion.createMany({
+					data: nuevasInstituciones
+				});
+			}
+		}
+
+		// Retornar miembro con instituciones actualizadas
+		const miembroConInstituciones = await prisma.miembro.findUnique({
+			where: { id_miembro: memberId },
+			include: {
+				estado: true,
+				congregacion: true,
+				tipoMiembro: true,
+				miembroInstitucions: { include: { institucion: true } }
+			}
+		});
+
+		return sendResponse(res, ApiResponse.updated(miembroConInstituciones, 'Miembro actualizado correctamente'));
 	} catch (error) {
-		console.error("Update miembro error:", error);
 		return sendResponse(res, ApiResponse.error('Error al actualizar miembro', error));
 	}
 });
 
-// Delete member (logical deletion)
+// DELETE member (logical deletion)
 router.delete("/:id", authenticateToken, requirePermission("miembros", "eliminar"), async (req: AuthRequest, res: Response) => {
 	try {
 		const memberId = getId(req);
@@ -296,7 +389,7 @@ router.delete("/:id", authenticateToken, requirePermission("miembros", "eliminar
 
 		const estadoEliminado = await getEstadoByCodigo('MIEMBRO', 'ELIMINADO');
 		if (!estadoEliminado) {
-			return sendResponse(res, ApiResponse.error("Estado 'ELIMINADO' no encontrado en la base de datos"));
+			return sendResponse(res, ApiResponse.error("Estado 'ELIMINADO' no encontrado"));
 		}
 
 		await prisma.miembro.update({
@@ -306,12 +399,11 @@ router.delete("/:id", authenticateToken, requirePermission("miembros", "eliminar
 
 		return sendResponse(res, ApiResponse.deleted('Miembro eliminado correctamente'));
 	} catch (error) {
-		console.error("Delete miembro error:", error);
 		return sendResponse(res, ApiResponse.error('Error al eliminar miembro', error));
 	}
 });
 
-// Toggle member status
+// PATCH toggle member status
 router.patch("/:id/status", authenticateToken, requirePermission("miembros", "actualizar"), async (req: AuthRequest, res: Response) => {
 	try {
 		const memberId = getId(req);
@@ -332,7 +424,7 @@ router.patch("/:id/status", authenticateToken, requirePermission("miembros", "ac
 		const estadoInactivo = await getEstadoByCodigo('MIEMBRO', 'INACTIVO');
 		
 		if (!estadoActivo || !estadoInactivo) {
-			return sendResponse(res, ApiResponse.error("Estados 'ACTIVO' o 'INACTIVO' no encontrados"));
+			return sendResponse(res, ApiResponse.error("Estados no encontrados"));
 		}
 
 		const nuevoEstado = existingMiembro.id_estado === estadoActivo.id_estado ? estadoInactivo.id_estado : estadoActivo.id_estado;
@@ -345,7 +437,6 @@ router.patch("/:id/status", authenticateToken, requirePermission("miembros", "ac
 		const mensaje = nuevoEstado === estadoActivo.id_estado ? 'Miembro activado correctamente' : 'Miembro inactivado correctamente';
 		return sendResponse(res, ApiResponse.success(null, mensaje));
 	} catch (error) {
-		console.error("Toggle miembro status error:", error);
 		return sendResponse(res, ApiResponse.error('Error al cambiar estado del miembro', error));
 	}
 });
