@@ -19,14 +19,14 @@ const getNumericId = (param: string | string[]): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Get options
-router.get('/opciones', authenticateToken, requirePermission('configuracion', 'admin'), async (req: AuthRequest, res: Response) => {
+// Listado: Estados
+router.get('/listado/estados', authenticateToken, requirePermission('configuracion', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const estados = await prisma.estado.findMany({ where: { entidad: 'CONGREGACION' }, orderBy: { nombre: 'asc' } });
-    return sendResponse(res, ApiResponse.success({ estados }));
+    return sendResponse(res, ApiResponse.success(estados));
   } catch (error) {
-    console.error('Get metadata error:', error);
-    return sendResponse(res, ApiResponse.error('Error al obtener metadatos', error));
+    console.error('Get estados error:', error);
+    return sendResponse(res, ApiResponse.error('Error al obtener estados', error));
   }
 });
 

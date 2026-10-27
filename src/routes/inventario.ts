@@ -19,19 +19,26 @@ const getNumericId = (param: string | string[]): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Opciones
-router.get('/opciones', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
+// Listado: Estados
+router.get('/listado/estados', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const estados = await prisma.estado.findMany({ where: { entidad: 'INVENTARIO' }, orderBy: { nombre: 'asc' } });
+    return sendResponse(res, ApiResponse.success(estados));
+  } catch (error) {
+    return sendResponse(res, ApiResponse.error('Error al obtener estados', error));
+  }
+});
+
+// Listado: Congregaciones
+router.get('/listado/congregaciones', authenticateToken, requirePermission('inventario', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     let congregacionFilter = {};
     const { nivel } = req.user || {};
-    if (nivel !== 'ADMIN' && req.user?.id_congregacion) congregacionFilter = { id_congregacion: req.user.id_congregacion };
-    const [estados, congregaciones] = await Promise.all([
-      prisma.estado.findMany({ where: { entidad: 'INVENTARIO' }, orderBy: { nombre: 'asc' } }),
-      prisma.congregacion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: 'asc' } })
-    ]);
-    return sendResponse(res, ApiResponse.success({ estados, congregaciones }));
+    if (nivel !== 'SUPERADMIN' && req.user?.id_congregacion) congregacionFilter = { id_congregacion: req.user.id_congregacion };
+    const congregaciones = await prisma.congregacion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: 'asc' } });
+    return sendResponse(res, ApiResponse.success(congregaciones));
   } catch (error) {
-    return sendResponse(res, ApiResponse.error('Error al obtener metadatos', error));
+    return sendResponse(res, ApiResponse.error('Error al obtener congregaciones', error));
   }
 });
 
@@ -104,7 +111,7 @@ router.put('/:id', authenticateToken, requirePermission('inventario', 'actualiza
     delete updateData.created_at;
     delete updateData.updated_at;
     const { nivel } = req.user || {};
-    if (nivel !== 'ADMIN' && updateData.id_congregacion) delete updateData.id_congregacion;
+    if (nivel !== 'ADMIN' && nivel !== 'SUPERADMIN' && updateData.id_congregacion) delete updateData.id_congregacion;
     const updatedItem = await prisma.inventarioItem.update({ where: { id_item: id }, data: updateData, include: { congregacion: true, estado: true } });
     return sendResponse(res, ApiResponse.updated(updatedItem, 'Item actualizado correctamente'));
   } catch (error) {

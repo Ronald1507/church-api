@@ -20,15 +20,15 @@ const getNumericId = (param) => {
     const num = parseInt(value);
     return isNaN(num) ? null : num;
 };
-// Get options
-router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'admin'), async (req, res) => {
+// Listado: Estados
+router.get('/listado/estados', auth_1.authenticateToken, (0, permissions_1.requirePermission)('configuracion', 'leer'), async (req, res) => {
     try {
         const estados = await db_1.default.estado.findMany({ where: { entidad: 'CONGREGACION' }, orderBy: { nombre: 'asc' } });
-        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success({ estados }));
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(estados));
     }
     catch (error) {
-        console.error('Get metadata error:', error);
-        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener metadatos', error));
+        console.error('Get estados error:', error);
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener estados', error));
     }
 });
 // Get all congregaciones

@@ -15,7 +15,12 @@ const RECURSOS = [
   'comunicaciones',
   'usuarios',
   'configuracion',
-  'reportes'
+  'reportes',
+  'familia',
+  'espiritual',
+  'pastoral',
+  'documentos',
+  'auditoria'
 ];
 
 const ACCIONES = ['crear', 'leer', 'actualizar', 'eliminar', 'admin'];
@@ -77,6 +82,29 @@ const ENTIDADES_ESTADO: Record<string, Array<{codigo: string; nombre: string; de
   ],
   MINISTERIO: [  // Keep for backward compatibility
     { codigo: 'ACTIVO', nombre: 'Ministerio activo', descripcion: 'Ministerio activo' }
+  ],
+  VISITA_PASTORAL: [
+    { codigo: 'PROGRAMADA', nombre: 'Programada', descripcion: 'Visita pastoral programada' },
+    { codigo: 'REALIZADA', nombre: 'Realizada', descripcion: 'Visita pastoral realizada', es_final: true },
+    { codigo: 'CANCELADA', nombre: 'Cancelada', descripcion: 'Visita pastoral cancelada', es_final: true }
+  ],
+  PETICION_ORACION: [
+    { codigo: 'ACTIVA', nombre: 'Activa', descripcion: 'Petición de oración activa' },
+    { codigo: 'RESPONDIDA', nombre: 'Respondida', descripcion: 'Oración respondida', es_final: true },
+    { codigo: 'CERRADA', nombre: 'Cerrada', descripcion: 'Petición cerrada', es_final: true }
+  ],
+  COMUNICACION: [
+    { codigo: 'BORRADOR', nombre: 'Borrador', descripcion: 'Comunicación en borrador' },
+    { codigo: 'ENVIADA', nombre: 'Enviada', descripcion: 'Comunicación enviada' },
+    { codigo: 'ANULADA', nombre: 'Anulada', descripcion: 'Comunicación anulada', es_final: true }
+  ],
+  DOCUMENTO: [
+    { codigo: 'VIGENTE', nombre: 'Vigente', descripcion: 'Documento vigente' },
+    { codigo: 'ANULADO', nombre: 'Anulado', descripcion: 'Documento anulado', es_final: true }
+  ],
+  CARGO_INSTITUCION: [
+    { codigo: 'ACTIVO', nombre: 'Activo', descripcion: 'Cargo vigente' },
+    { codigo: 'FINALIZADO', nombre: 'Finalizado', descripcion: 'Cargo finalizado', es_final: true }
   ]
 };
 
@@ -192,7 +220,12 @@ async function main() {
       ...ACCIONES.map(a => ({ recurso: 'eventos', accion: a })),
       ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'inventario', accion: a })),
       ...['crear', 'leer', 'actualizar', 'admin'].map(a => ({ recurso: 'comunicaciones', accion: a })),
-      ...['leer', 'admin'].map(a => ({ recurso: 'reportes', accion: a }))
+      ...['leer', 'admin'].map(a => ({ recurso: 'reportes', accion: a })),
+      ...ACCIONES.map(a => ({ recurso: 'familia', accion: a })),
+      ...ACCIONES.map(a => ({ recurso: 'espiritual', accion: a })),
+      ...ACCIONES.map(a => ({ recurso: 'pastoral', accion: a })),
+      ...ACCIONES.map(a => ({ recurso: 'documentos', accion: a })),
+      ...['leer', 'admin'].map(a => ({ recurso: 'auditoria', accion: a }))
     ];
 
     for (const p of adminPermisos) {
@@ -403,7 +436,7 @@ async function main() {
     // Superadmin
     await prisma.usuarioSistema.upsert({
       where: { email: 'superadmin@iglesia.cl' },
-      update: {},
+      update: { nivel: NivelAcceso.SUPERADMIN, id_rol: rolSuperadmin.id_rol },
       create: {
         username: 'superadmin',
         email: 'superadmin@iglesia.cl',
@@ -418,7 +451,7 @@ async function main() {
     // Admin
     await prisma.usuarioSistema.upsert({
       where: { email: 'admin@iglesia.cl' },
-      update: {},
+      update: { nivel: NivelAcceso.ADMIN, id_rol: rolAdmin.id_rol },
       create: {
         username: 'admin_central',
         email: 'admin@iglesia.cl',
@@ -433,7 +466,7 @@ async function main() {
     // Usuario normal
     await prisma.usuarioSistema.upsert({
       where: { email: 'usuario@iglesia.cl' },
-      update: {},
+      update: { nivel: NivelAcceso.USUARIO, id_rol: rolUsuario.id_rol },
       create: {
         username: 'usuario_demo',
         email: 'usuario@iglesia.cl',

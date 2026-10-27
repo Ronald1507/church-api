@@ -207,7 +207,7 @@ router.post("/", authenticateToken, requirePermission("miembros", "crear"), asyn
 		}
 
 		let id_congregacion: number;
-		if (nivel === "ADMIN" && input.id_congregacion) {
+		if ((nivel === "ADMIN" || nivel === "SUPERADMIN") && input.id_congregacion) {
 			id_congregacion = parseInt(String(input.id_congregacion));
 		} else if (req.user?.id_congregacion) {
 			id_congregacion = req.user.id_congregacion;
@@ -321,7 +321,7 @@ router.put("/:id", authenticateToken, requirePermission("miembros", "actualizar"
 		}
 
 		const { nivel } = req.user || {};
-		if (nivel !== "ADMIN") {
+		if (nivel !== "ADMIN" && nivel !== "SUPERADMIN") {
 			delete updateData.id_congregacion;
 		}
 

@@ -70,6 +70,44 @@ model Estado {
 }
 
 // =============================================================
+// 0. CATÁLOGOS NORMALIZADOS
+// =============================================================
+model TipoTransaccion {
+  id_tipo      Int           @id @default(autoincrement())
+  nombre      String         @unique @map("nombre") @db.VarChar(30)
+  descripcion String?        @map("descripcion") @db.VarChar(100)
+  naturaleza  String         @map("naturaleza") @db.VarChar(10)  // INGRESO | EGRESO
+  created_at   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  
+  transacciones Transaccion[]
+  
+  @@map("tipo_transaccion")
+}
+
+model MetodoPago {
+  id_metodo_pago Int           @id @default(autoincrement())
+  nombre        String        @unique @map("nombre") @db.VarChar(30)
+  descripcion  String?       @map("descripcion") @db.VarChar(100)
+  activo       Boolean       @default(true) @map("activo")
+  created_at   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  
+  transacciones Transaccion[]
+  
+  @@map("metodo_pago")
+}
+
+model RolServicio {
+  id_rol        Int           @id @default(autoincrement())
+  nombre       String         @unique @map("nombre") @db.VarChar(40)
+  descripcion  String?        @map("descripcion") @db.VarChar(100)
+  created_at   DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  
+  servicios    Servicio[]
+  
+  @@map("rol_servicio")
+}
+
+// =============================================================
 // 0. PERMISOS RBAC
 // =============================================================
 model Permiso {
@@ -129,6 +167,8 @@ model UsuarioSistema {
   rol           RolSistema    @relation(fields: [id_rol], references: [id_rol])
   estado        Estado        @relation(fields: [id_estado], references: [id_estado])
   congregacion  Congregacion? @relation(fields: [id_congregacion], references: [id_congregacion])
+  
+  transacciones Transaccion[]
 
   @@index([id_rol])
   @@index([id_estado])
@@ -214,6 +254,7 @@ model Miembro {
   asistenciaEventos    AsistenciaEvento[]
   ofrendaDizmos        OfrendaDizmo[]
   documentos           Documento[]
+  servicios           Servicio[]
 
   @@index([id_congregacion])
   @@index([id_estado])
@@ -355,6 +396,7 @@ model Institucion {
   miembroInstitucions  MiembroInstitucion[]
   comunicaciones        Comunicacion[]
   prestamos             PrestamoInventario[]
+  finanzasCuentas       FinanzaCuenta[]
 
   @@index([id_congregacion])
   @@index([id_estado])
@@ -421,6 +463,7 @@ model Evento {
   congregacion Congregacion       @relation(fields: [id_congregacion], references: [id_congregacion])
   estado       Estado             @relation(fields: [id_estado], references: [id_estado])
   asistencia   AsistenciaEvento[]
+  servicios    Servicio[]
 
   @@index([id_congregacion])
   @@index([fecha_inicio])
@@ -455,40 +498,67 @@ model FinanzaCuenta {
   descripcion     String?  @map("descripcion") @db.Text
   saldo_actual    Decimal  @default(0) @map("saldo_actual")
   id_congregacion Int      @map("id_congregacion")
+  id_institucion Int?    @map("id_institucion")  // Nullable: null = cuenta de congregación, non-null = cuenta de institución
   id_estado       Int      @map("id_estado")
   created_at      DateTime @default(now()) @map("created_at") @db.Timestamptz
   updated_at      DateTime @default(now()) @map("updated_at") @db.Timestamptz
 
   congregacion  Congregacion  @relation(fields: [id_congregacion], references: [id_congregacion])
+  institucion  Institucion? @relation(fields: [id_institucion], references: [id_institucion])
   estado        Estado        @relation(fields: [id_estado], references: [id_estado])
   transacciones Transaccion[]
 
   @@index([id_congregacion])
+  @@index([id_institucion])
   @@map("finanza_cuenta")
 }
 
 model Transaccion {
   id_transaccion    Int      @id @default(autoincrement())
   id_cuenta         Int      @map("id_cuenta")
-  tipo              String   @map("tipo") @db.VarChar(10)
+  id_tipo           Int?     @map("id_tipo")   // Nullable temporalmente - migrar datos existentes
   concepto          String   @map("concepto") @db.VarChar(200)
   monto             Decimal  @map("monto")
   fecha             DateTime @default(now()) @map("fecha") @db.Date
-  metodo_pago       String?  @map("metodo_pago") @db.VarChar(30)
-  id_registrado_por Int      @map("id_registrado_por")
+  id_metodo_pago    Int?     @map("id_metodo_pago")  // Nullable temporalmente
+  id_registrado_por Int     @map("id_registrado_por")
   comprobante_url   String?  @map("comprobante_url") @db.VarChar(300)
-  id_estado         Int      @map("id_estado")
-  created_at        DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updated_at        DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  id_estado         Int       @map("id_estado")
+  created_at        DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updated_at        DateTime  @default(now()) @map("updated_at") @db.Timestamptz
 
-  cuenta   FinanzaCuenta  @relation(fields: [id_cuenta], references: [id_cuenta])
-  estado   Estado         @relation(fields: [id_estado], references: [id_estado])
-  ofrendas OfrendaDizmo[]
+  cuenta          FinanzaCuenta    @relation(fields: [id_cuenta], references: [id_cuenta])
+  tipoTransaccion TipoTransaccion? @relation(fields: [id_tipo], references: [id_tipo])
+  metodoPago      MetodoPago?     @relation(fields: [id_metodo_pago], references: [id_metodo_pago])
+  estado         Estado        @relation(fields: [id_estado], references: [id_estado])
+  usuario        UsuarioSistema @relation(fields: [id_registrado_por], references: [id_usuario])
+  ofrendas       OfrendaDizmo[]
 
   @@index([id_cuenta])
+  @@index([id_tipo])
   @@index([fecha])
   @@index([id_estado])
   @@map("transaccion")
+}
+
+model Servicio {
+  id_servicio   Int       @id @default(autoincrement())
+  id_evento     Int       @map("id_evento")
+  id_miembro    Int       @map("id_miembro")
+  id_rol       Int       @map("id_rol")
+  fecha        DateTime   @default(now()) @map("fecha") @db.Timestamptz
+  observaciones String? @map("observaciones") @db.Text
+  created_at    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  
+  evento       Evento     @relation(fields: [id_evento], references: [id_evento])
+  miembro      Miembro    @relation(fields: [id_miembro], references: [id_miembro])
+  rol         RolServicio @relation(fields: [id_rol], references: [id_rol])
+  
+  @@unique([id_evento, id_miembro, id_rol])
+  @@index([id_evento])
+  @@index([id_miembro])
+  @@index([id_rol])
+  @@map("servicio")
 }
 
 model OfrendaDizmo {

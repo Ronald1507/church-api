@@ -20,21 +20,28 @@ const getNumericId = (param) => {
     const num = parseInt(value);
     return isNaN(num) ? null : num;
 };
-// Opciones
-router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
+// Listado: Estados
+router.get('/listado/estados', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
+    try {
+        const estados = await db_1.default.estado.findMany({ where: { entidad: 'INVENTARIO' }, orderBy: { nombre: 'asc' } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(estados));
+    }
+    catch (error) {
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener estados', error));
+    }
+});
+// Listado: Congregaciones
+router.get('/listado/congregaciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('inventario', 'leer'), async (req, res) => {
     try {
         let congregacionFilter = {};
         const { nivel } = req.user || {};
-        if (nivel !== 'ADMIN' && req.user?.id_congregacion)
+        if (nivel !== 'SUPERADMIN' && req.user?.id_congregacion)
             congregacionFilter = { id_congregacion: req.user.id_congregacion };
-        const [estados, congregaciones] = await Promise.all([
-            db_1.default.estado.findMany({ where: { entidad: 'INVENTARIO' }, orderBy: { nombre: 'asc' } }),
-            db_1.default.congregacion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: 'asc' } })
-        ]);
-        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success({ estados, congregaciones }));
+        const congregaciones = await db_1.default.congregacion.findMany({ where: congregacionFilter, include: { estado: true }, orderBy: { nombre: 'asc' } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(congregaciones));
     }
     catch (error) {
-        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener metadatos', error));
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener congregaciones', error));
     }
 });
 // Items

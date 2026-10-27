@@ -20,20 +20,45 @@ const getNumericId = (param: string | string[]): number | null => {
   return isNaN(num) ? null : num;
 };
 
-// Opciones
-router.get('/opciones', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+// Listado: Roles
+router.get('/listado/roles', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const roles = await prisma.rolSistema.findMany({ orderBy: { nombre: 'asc' } });
+    return sendResponse(res, ApiResponse.success(roles));
+  } catch (error) {
+    return sendResponse(res, ApiResponse.error('Error al obtener roles', error));
+  }
+});
+
+// Listado: Estados
+router.get('/listado/estados', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const estados = await prisma.estado.findMany({ where: { entidad: 'USUARIO' }, orderBy: { nombre: 'asc' } });
+    return sendResponse(res, ApiResponse.success(estados));
+  } catch (error) {
+    return sendResponse(res, ApiResponse.error('Error al obtener estados', error));
+  }
+});
+
+// Listado: Miembros
+router.get('/listado/miembros', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
   try {
     const estadoActivo = await getEstadoByCodigo('MIEMBRO', 'ACTIVO');
     const miembroFilter = estadoActivo ? { id_estado: estadoActivo.id_estado } : {};
-    const [roles, estados, miembros, congregaciones] = await Promise.all([
-      prisma.rolSistema.findMany({ orderBy: { nombre: 'asc' } }),
-      prisma.estado.findMany({ where: { entidad: 'USUARIO' }, orderBy: { nombre: 'asc' } }),
-      prisma.miembro.findMany({ where: miembroFilter, orderBy: { nombres: 'asc' } }),
-      prisma.congregacion.findMany({ include: { estado: true }, orderBy: { nombre: 'asc' } })
-    ]);
-    return sendResponse(res, ApiResponse.success({ roles, estados, miembros, congregaciones }));
+    const miembros = await prisma.miembro.findMany({ where: miembroFilter, orderBy: { nombres: 'asc' } });
+    return sendResponse(res, ApiResponse.success(miembros));
   } catch (error) {
-    return sendResponse(res, ApiResponse.error('Error al obtener metadatos', error));
+    return sendResponse(res, ApiResponse.error('Error al obtener miembros', error));
+  }
+});
+
+// Listado: Congregaciones
+router.get('/listado/congregaciones', authenticateToken, requirePermission('usuarios', 'leer'), async (req: AuthRequest, res: Response) => {
+  try {
+    const congregaciones = await prisma.congregacion.findMany({ include: { estado: true }, orderBy: { nombre: 'asc' } });
+    return sendResponse(res, ApiResponse.success(congregaciones));
+  } catch (error) {
+    return sendResponse(res, ApiResponse.error('Error al obtener congregaciones', error));
   }
 });
 

@@ -16,6 +16,12 @@ import usuarioRoutes from "./routes/usuarios";
 import inventarioRoutes from "./routes/inventario";
 import institucionRoutes from "./routes/instituciones";
 import estadoRoutes from "./routes/estados";
+import familiaRoutes from "./routes/familia";
+import espiritualRoutes from "./routes/espiritual";
+import pastoralRoutes from "./routes/pastoral";
+import comunicacionRoutes from "./routes/comunicaciones";
+import documentoRoutes from "./routes/documentos";
+import auditoriaRoutes from "./routes/auditoria";
 
 const app: Application = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +41,12 @@ app.use("/api/usuarios", usuarioRoutes);
 app.use("/api/inventario", inventarioRoutes);
 app.use("/api/instituciones", institucionRoutes);
 app.use("/api/estados", estadoRoutes);
+app.use("/api/familia", familiaRoutes);
+app.use("/api/espiritual", espiritualRoutes);
+app.use("/api/pastoral", pastoralRoutes);
+app.use("/api/comunicaciones", comunicacionRoutes);
+app.use("/api/documentos", documentoRoutes);
+app.use("/api/auditoria", auditoriaRoutes);
 
 // Health check
 app.get("/health", (req: Request, res: Response) => {

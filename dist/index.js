@@ -19,6 +19,12 @@ const usuarios_1 = __importDefault(require("./routes/usuarios"));
 const inventario_1 = __importDefault(require("./routes/inventario"));
 const instituciones_1 = __importDefault(require("./routes/instituciones"));
 const estados_1 = __importDefault(require("./routes/estados"));
+const familia_1 = __importDefault(require("./routes/familia"));
+const espiritual_1 = __importDefault(require("./routes/espiritual"));
+const pastoral_1 = __importDefault(require("./routes/pastoral"));
+const comunicaciones_1 = __importDefault(require("./routes/comunicaciones"));
+const documentos_1 = __importDefault(require("./routes/documentos"));
+const auditoria_1 = __importDefault(require("./routes/auditoria"));
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3000;
 // Middleware
@@ -35,6 +41,12 @@ app.use("/api/usuarios", usuarios_1.default);
 app.use("/api/inventario", inventario_1.default);
 app.use("/api/instituciones", instituciones_1.default);
 app.use("/api/estados", estados_1.default);
+app.use("/api/familia", familia_1.default);
+app.use("/api/espiritual", espiritual_1.default);
+app.use("/api/pastoral", pastoral_1.default);
+app.use("/api/comunicaciones", comunicaciones_1.default);
+app.use("/api/documentos", documentos_1.default);
+app.use("/api/auditoria", auditoria_1.default);
 // Health check
 app.get("/health", (req, res) => {
     res.json(response_1.ApiResponse.success({ status: "ok", timestamp: new Date().toISOString() }));

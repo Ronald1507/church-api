@@ -21,21 +21,46 @@ const getNumericId = (param) => {
     const num = parseInt(value);
     return isNaN(num) ? null : num;
 };
-// Opciones
-router.get('/opciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
+// Listado: Roles
+router.get('/listado/roles', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
+    try {
+        const roles = await db_1.default.rolSistema.findMany({ orderBy: { nombre: 'asc' } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(roles));
+    }
+    catch (error) {
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener roles', error));
+    }
+});
+// Listado: Estados
+router.get('/listado/estados', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
+    try {
+        const estados = await db_1.default.estado.findMany({ where: { entidad: 'USUARIO' }, orderBy: { nombre: 'asc' } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(estados));
+    }
+    catch (error) {
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener estados', error));
+    }
+});
+// Listado: Miembros
+router.get('/listado/miembros', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
     try {
         const estadoActivo = await (0, estados_1.getEstadoByCodigo)('MIEMBRO', 'ACTIVO');
         const miembroFilter = estadoActivo ? { id_estado: estadoActivo.id_estado } : {};
-        const [roles, estados, miembros, congregaciones] = await Promise.all([
-            db_1.default.rolSistema.findMany({ orderBy: { nombre: 'asc' } }),
-            db_1.default.estado.findMany({ where: { entidad: 'USUARIO' }, orderBy: { nombre: 'asc' } }),
-            db_1.default.miembro.findMany({ where: miembroFilter, orderBy: { nombres: 'asc' } }),
-            db_1.default.congregacion.findMany({ include: { estado: true }, orderBy: { nombre: 'asc' } })
-        ]);
-        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success({ roles, estados, miembros, congregaciones }));
+        const miembros = await db_1.default.miembro.findMany({ where: miembroFilter, orderBy: { nombres: 'asc' } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(miembros));
     }
     catch (error) {
-        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener metadatos', error));
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener miembros', error));
+    }
+});
+// Listado: Congregaciones
+router.get('/listado/congregaciones', auth_1.authenticateToken, (0, permissions_1.requirePermission)('usuarios', 'leer'), async (req, res) => {
+    try {
+        const congregaciones = await db_1.default.congregacion.findMany({ include: { estado: true }, orderBy: { nombre: 'asc' } });
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.success(congregaciones));
+    }
+    catch (error) {
+        return (0, response_1.sendResponse)(res, response_1.ApiResponse.error('Error al obtener congregaciones', error));
     }
 });
 // Get all users
